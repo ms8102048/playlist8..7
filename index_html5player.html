@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>極速播放器-DPlayer</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
+  <title>極速播放器</title>
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { transition: all 0.3s; }
@@ -14,8 +13,7 @@
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
-    /* DPlayer 容器樣式 */
-    #dplayer { width: 100%; height: 250px; background: #000; border-radius: 4px; }
+    video { width: 100%; background: #000; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -30,13 +28,12 @@
   <button id="N" class="btn-ctrl" style="background: #a00;">▶ 下一集</button>
 </div>
 
-<div id="dplayer"></div>
+<video id="V" controls autoplay playsinline></video>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
-  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), N = d.getElementById("N");
-  let dp = null; // DPlayer 實例
+  const d = document, L = d.getElementById("L"), V = d.getElementById("V"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), N = d.getElementById("N");
+  let hls = null;
 
   // 1. 初始化讀取
   window.onload = () => {
@@ -44,7 +41,7 @@
     if (s) {
       L.value = s;
       gen();
-      const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
+      const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_t");
       if (u) load(u, t);
     }
   };
@@ -65,40 +62,36 @@
       b.onclick = () => load(u, 0);
       C.appendChild(b);
     });
-    if (dp) hi(dp.video.dataset.u);
+    hi(V.dataset.u);
   }
 
-  // 4. 播放影片 (換成 DPlayer 邏輯)
+  // 4. 播放影片
   function load(u, t) {
+    V.dataset.u = u;
     hi(u);
-    if (dp) {
-        dp.switchVideo({ url: u, type: 'hls' });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.play();
-    } else {
-        dp = new DPlayer({
-            container: d.getElementById('dplayer'),
-            autoplay: true,
-            hotkey: true,
-            video: { url: u, type: 'hls' }
-        });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        // 監聽連播
-        dp.on('ended', () => N.click());
+    if (hls) hls.destroy();
+    if (Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(u);
+      hls.attachMedia(V);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (t > 0) V.currentTime = t;
+        V.play().catch(() => {});
+      });
+    } else if (V.canPlayType('application/vnd.apple.mpegurl')) {
+      V.src = u;
+      if (t > 0) V.currentTime = t;
     }
   }
 
   // 5. 播放下一集
   N.onclick = () => {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
-    const i = bs.findIndex(b => b.dataset.u === u);
+    const i = bs.findIndex(b => b.dataset.u === V.dataset.u);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   };
 
-  // 6. 輔助功能
+  // 6. 輔助功能：高亮與連播
   function hi(u) {
     d.querySelectorAll(".btn-num").forEach(b => {
       const a = b.dataset.u === u;
@@ -113,11 +106,13 @@
   };
 
   setInterval(() => {
-    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
-      localStorage.setItem("tv_u", dp.video.dataset.u);
-      localStorage.setItem("tv_last_time", dp.video.currentTime);
+    if (V.currentTime > 0 && !V.paused) {
+      localStorage.setItem("tv_u", V.dataset.u);
+      localStorage.setItem("tv_last_time", V.currentTime);
     }
   }, 3000);
+
+  V.onended = () => N.click();
 </script>
 
 </body>
