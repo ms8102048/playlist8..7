@@ -15,7 +15,6 @@
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    /* 修正 DPlayer 內部圖示間距，防止擠壓 */
     .dplayer-icons-right { display: flex !important; align-items: center; }
   </style>
 </head>
@@ -40,8 +39,29 @@
   let dp = null;
 
   window.onload = () => {
-    const s = localStorage.getItem("tv_l");
-    if (s) { L.value = s; gen(); const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time"); if (u) load(u, t); }
+    // 新增：自動讀取 list.txt 功能
+    fetch('list.txt')
+      .then(res => {
+        if (res.ok) return res.text();
+        throw new Error('No list.txt');
+      })
+      .then(text => {
+        if (text.trim()) {
+          L.value = text;
+          localStorage.setItem("tv_l", text); // 同步到快存
+          gen();
+        }
+      })
+      .catch(err => {
+        // 若無 list.txt，則讀取 localStorage (原邏輯)
+        const s = localStorage.getItem("tv_l");
+        if (s) { L.value = s; gen(); }
+      })
+      .finally(() => {
+        // 無論如何都讀取上次播放位置
+        const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
+        if (u) load(u, t);
+      });
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -77,7 +97,6 @@
         if (t > 0) dp.seek(t);
         dp.on('ended', () => N.click());
         
-        // --- 修正版：自定義快捷按鈕組 (不蓋掉設定圖示) ---
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
 
@@ -96,12 +115,11 @@
         };
 
         const b10 = createQuickBtn('◀10', -10, "倒退 10 秒");
-        const b85 = createQuickBtn('80▶', 80, "跳過 80 秒");  
+        const b85 = createQuickBtn('80▶', 80, "跳過 80 秒");  
 
         btnBox.appendChild(b10);
         btnBox.appendChild(b85);
         
-        // 使用 insertBefore 插入到最左邊，不影響原本右邊的圖示
         const ir = d.querySelector('.dplayer-icons-right');
         ir.insertBefore(btnBox, ir.firstChild);
     }
@@ -132,5 +150,4 @@
   }, 3000);
 </script>
 </body>
-
 </html>
