@@ -14,8 +14,9 @@
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
+    /* 讀取按鈕用深藍色區隔 */
+    #Sync { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    /* 修正 DPlayer 內部圖示間距，防止擠壓 */
     .dplayer-icons-right { display: flex !important; align-items: center; }
   </style>
 </head>
@@ -28,6 +29,7 @@
 
 <div class="btn-group">
   <button id="T" class="btn-ctrl">收合/展開清單</button>
+  <button id="Sync" class="btn-ctrl">讀取現有清單</button>
 </div>
 
 <div id="dplayer"></div>
@@ -35,31 +37,36 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
-  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T");
+  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
   let dp = null;
 
+  // 1. 頁面載入：只讀取上次瀏覽器存的舊內容，不再主動聯網抓 list.txt
   window.onload = () => {
     const saved = localStorage.getItem("tv_l");
     if (saved) { L.value = saved; gen(); }
+    
+    const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
+    if (u) load(u, t);
+  };
 
-    // 強制從伺服器抓取最新 list.txt (防快取)
+  // 2. 手動讀取按鈕邏輯
+  S.onclick = () => {
+    if (!confirm("確定要從伺服器讀取 list.txt 並覆蓋目前清單嗎？")) return;
+    
     fetch('list.txt?t=' + Date.now(), {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
     })
-      .then(res => res.ok ? res.text() : Promise.reject())
-      .then(text => {
-        if (text.trim() && text !== saved) {
-          L.value = text;
-          localStorage.setItem("tv_l", text);
-          gen();
-        }
-      })
-      .catch(() => console.log("使用快存清單"))
-      .finally(() => {
-        const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
-        if (u) load(u, t);
-      });
+    .then(res => res.ok ? res.text() : Promise.reject())
+    .then(text => {
+      if (text.trim()) {
+        L.value = text;
+        localStorage.setItem("tv_l", text);
+        gen();
+        alert("清單已更新");
+      }
+    })
+    .catch(() => alert("讀取失敗，請檢查 list.txt 是否存在"));
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -95,14 +102,12 @@
         if (t > 0) dp.seek(t);
         dp.on('ended', () => nextVideo());
         
-        // --- 建立功能按鈕組 ---
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
 
-        // 1. 集數顯示框
         const curEp = d.createElement('div');
         curEp.id = "curEp";
-        // 減亮版：使用較暗的綠色 (#0a0) 並移除背景色，減輕視覺負擔
+        // 減亮色調：森林綠
         curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
 
         const createQuickBtn = (text, action) => {
@@ -115,23 +120,9 @@
             return btn;
         };
 
-        // 2. 倒退按鈕
-        const b10 = createQuickBtn('◀ 10', () => {
-            dp.seek(dp.video.currentTime - 10);
-            dp.notice("倒退 10 秒");
-        });
-
-        // 3. 片頭按鈕 (跳到 1:25)
-        const bHead = createQuickBtn('‖◀◀', () => {
-            dp.seek(85);
-            dp.notice("跳至片頭 1:25");
-        });
-
-        // 4. 下一集按鈕
-        const bNext = createQuickBtn('▶‖ ', () => {
-            dp.notice("下一集");
-            nextVideo();
-        });
+        const b10 = createQuickBtn('◀ 10', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); });
+        const bHead = createQuickBtn('‖◀◀', () => { dp.seek(85); dp.notice("跳至片頭"); });
+        const bNext = createQuickBtn('▶‖ ', () => { dp.notice("下一集"); nextVideo(); });
 
         btnBox.appendChild(curEp);
         btnBox.appendChild(b10);
