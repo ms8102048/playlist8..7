@@ -105,7 +105,7 @@
             btn.className = 'dplayer-icon';
             btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center;';
             // 將 margin-top 從 8px 調低到 6px 以對齊水平線，並移除背景框
-            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:3px;">${text}</div>`;
+            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
             btn.onclick = (e) => { e.stopPropagation(); action(); };
             return btn;
         };
