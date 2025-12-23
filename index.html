@@ -114,16 +114,18 @@
             const btn = d.createElement('div');
             btn.className = 'dplayer-icon';
             btn.style.width = 'auto';
-            btn.style.padding = '0 2px';
-            btn.innerHTML = `<div style="font-size:10px; font-weight:bold; background:rgba(255,255,255,0.15); padding:1px 2px; border-radius:3px; height:18px; display:flex; align-items:center; margin-top:8px;">${text}</div>`;
+            btn.style.padding = '0 3px'; // 按鈕彼此間的距離
+            // 移除 background，讓 Emoji 乾淨地顯示在列上，並修正 line-height
+            btn.innerHTML = `<div style="font-size:18px; line-height:1; height:18px; display:flex; align-items:center; margin-top:8px;">${text}</div>`;
             btn.onclick = (e) => { e.stopPropagation(); action(); };
             return btn;
         };
 
-        const b10 = createQuickBtn('<span style="font-size: 18px;">⏪</span>', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); });
-        const bHead = createQuickBtn('<span style="font-size: 18px;">↩️</span>', () => { dp.seek(85); dp.notice("跳至片頭"); });
-        const bNext = createQuickBtn('<span style="font-size: 18px;">⏭️</span>', () => { dp.notice("下一集"); nextVideo(); });
-
+        // 下方的按鈕呼叫也要微調，移除內部的 <span> 以免干擾對齊
+        const b10 = createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); });
+        const bHead = createQuickBtn('↩️', () => { dp.seek(85); dp.notice("跳至片頭"); });
+        const bNext = createQuickBtn('⏭️', () => { dp.notice("下一集"); nextVideo(); });
+        
         btnBox.appendChild(curEp);
         btnBox.appendChild(b10);
         btnBox.appendChild(bHead);
