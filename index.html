@@ -112,19 +112,19 @@
         };
 
         // 1. 倒退 10 秒
-        const b10 = createQuickBtn('◁ 10', () => {
+        const b10 = createQuickBtn('◀ 10', () => {
             dp.seek(dp.video.currentTime - 10);
             dp.notice("倒退 10 秒");
         });
 
         // 2. 跳到 1:25 (85秒)
-        const bHead = createQuickBtn('​‖◁◁', () => {
+        const bHead = createQuickBtn('​‖◀◀', () => {
             dp.seek(85);
             dp.notice("跳至片頭");
         });
 
         // 3. Next 按鈕 (取代原本的下一集按鈕)
-        const bNext = createQuickBtn('▷‖', () => {
+        const bNext = createQuickBtn('▶‖ ', () => {
             nextVideo();
         });
 
