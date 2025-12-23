@@ -14,7 +14,6 @@
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
-    /* 讀取按鈕用深藍色區隔 */
     #Sync { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     .dplayer-icons-right { display: flex !important; align-items: center; }
@@ -40,23 +39,16 @@
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
   let dp = null;
 
-  // 1. 頁面載入：只讀取上次瀏覽器存的舊內容，不再主動聯網抓 list.txt
   window.onload = () => {
     const saved = localStorage.getItem("tv_l");
     if (saved) { L.value = saved; gen(); }
-    
     const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
     if (u) load(u, t);
   };
 
-  // 2. 手動讀取按鈕邏輯
   S.onclick = () => {
     if (!confirm("確定要從伺服器讀取 list.txt 並覆蓋目前清單嗎？")) return;
-    
-    fetch('list.txt?t=' + Date.now(), {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-    })
+    fetch('list.txt?t=' + Date.now(), { cache: 'no-store' })
     .then(res => res.ok ? res.text() : Promise.reject())
     .then(text => {
       if (text.trim()) {
@@ -65,8 +57,7 @@
         gen();
         alert("清單已更新");
       }
-    })
-    .catch(() => alert("讀取失敗，請檢查 list.txt 是否存在"));
+    }).catch(() => alert("讀取失敗"));
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -107,25 +98,22 @@
 
         const curEp = d.createElement('div');
         curEp.id = "curEp";
-        // 減亮色調：森林綠
         curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
 
-       const createQuickBtn = (text, action) => {
+        const createQuickBtn = (text, action) => {
             const btn = d.createElement('div');
             btn.className = 'dplayer-icon';
-            btn.style.width = 'auto';
-            btn.style.padding = '0 3px';
-            // 關鍵修改：移除 background，改用 flex 並調整 margin-top
-            btn.innerHTML = `<div style="font-size:18px; display:flex; align-items:center; height:100%; margin-top:5px;">${text}</div>`;
+            btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center;';
+            // 將 margin-top 從 8px 調低到 6px 以對齊水平線，並移除背景框
+            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:6px;">${text}</div>`;
             btn.onclick = (e) => { e.stopPropagation(); action(); };
             return btn;
         };
 
-        // 傳入純符號，不要再包 span，避免雙重偏移
         const b10 = createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); });
         const bHead = createQuickBtn('↩️', () => { dp.seek(85); dp.notice("跳至片頭"); });
         const bNext = createQuickBtn('⏭️', () => { dp.notice("下一集"); nextVideo(); });
-        
+
         btnBox.appendChild(curEp);
         btnBox.appendChild(b10);
         btnBox.appendChild(bHead);
