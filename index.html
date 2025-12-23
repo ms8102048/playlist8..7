@@ -39,26 +39,26 @@
   let dp = null;
 
   window.onload = () => {
-    // 新增：自動讀取 list.txt 功能
-    fetch('list.txt')
-      .then(res => {
-        if (res.ok) return res.text();
-        throw new Error('No list.txt');
-      })
+    // 優先讀取上次快存以秒開介面
+    const saved = localStorage.getItem("tv_l");
+    if (saved) { L.value = saved; gen(); }
+
+    // 強制從伺服器抓取最新 list.txt (加入防快取設定)
+    fetch('list.txt?t=' + Date.now(), {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+    })
+      .then(res => res.ok ? res.text() : Promise.reject())
       .then(text => {
-        if (text.trim()) {
+        if (text.trim() && text !== saved) {
           L.value = text;
-          localStorage.setItem("tv_l", text); // 同步到快存
+          localStorage.setItem("tv_l", text);
           gen();
+          console.log("清單已即時更新");
         }
       })
-      .catch(err => {
-        // 若無 list.txt，則讀取 localStorage (原邏輯)
-        const s = localStorage.getItem("tv_l");
-        if (s) { L.value = s; gen(); }
-      })
+      .catch(() => console.log("維持使用快存清單"))
       .finally(() => {
-        // 無論如何都讀取上次播放位置
         const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
         if (u) load(u, t);
       });
@@ -99,7 +99,6 @@
         
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
-
         const createQuickBtn = (text, seconds, notice) => {
             const btn = d.createElement('div');
             btn.className = 'dplayer-icon';
@@ -113,13 +112,10 @@
             };
             return btn;
         };
-
         const b10 = createQuickBtn('◀10', -10, "倒退 10 秒");
         const b85 = createQuickBtn('80▶', 80, "跳過 80 秒");  
-
         btnBox.appendChild(b10);
         btnBox.appendChild(b85);
-        
         const ir = d.querySelector('.dplayer-icons-right');
         ir.insertBefore(btnBox, ir.firstChild);
     }
