@@ -15,7 +15,7 @@
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    /* 修正 DPlayer 內部圖示間距 */
+    /* 修正 DPlayer 內部圖示間距，防止擠壓 */
     .dplayer-icons-right { display: flex !important; align-items: center; }
   </style>
 </head>
@@ -42,6 +42,7 @@
     const saved = localStorage.getItem("tv_l");
     if (saved) { L.value = saved; gen(); }
 
+    // 強制從伺服器抓取最新 list.txt (防快取)
     fetch('list.txt?t=' + Date.now(), {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
@@ -54,7 +55,7 @@
           gen();
         }
       })
-      .catch(() => console.log("維持使用快存"))
+      .catch(() => console.log("使用快存清單"))
       .finally(() => {
         const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
         if (u) load(u, t);
@@ -94,9 +95,14 @@
         if (t > 0) dp.seek(t);
         dp.on('ended', () => nextVideo());
         
-        // --- 建立按鈕組：-10, Head, Next ---
+        // --- 建立功能按鈕組 ---
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
+
+        // 1. 集數顯示框
+        const curEp = d.createElement('div');
+        curEp.id = "curEp";
+        curEp.style.cssText = 'font-size:11px; color:#0f0; border:1px solid #0f0; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold; background:rgba(0,255,0,0.1);';
 
         const createQuickBtn = (text, action) => {
             const btn = d.createElement('div');
@@ -104,41 +110,39 @@
             btn.style.width = 'auto';
             btn.style.padding = '0 5px';
             btn.innerHTML = `<div style="font-size:10px; font-weight:bold; background:rgba(255,255,255,0.15); padding:1px 5px; border-radius:3px; height:18px; display:flex; align-items:center; margin-top:8px;">${text}</div>`;
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                action();
-            };
+            btn.onclick = (e) => { e.stopPropagation(); action(); };
             return btn;
         };
 
-        // 1. 倒退 10 秒
+        // 2. 倒退按鈕
         const b10 = createQuickBtn('◀ 10', () => {
             dp.seek(dp.video.currentTime - 10);
             dp.notice("倒退 10 秒");
         });
 
-        // 2. 跳到 1:25 (85秒)
-        const bHead = createQuickBtn('​‖◀◀', () => {
+        // 3. 片頭按鈕 (跳到 1:25)
+        const bHead = createQuickBtn('‖◀◀', () => {
             dp.seek(85);
-            dp.notice("跳至片頭");
+            dp.notice("跳至片頭 1:25");
         });
 
-        // 3. Next 按鈕 (取代原本的下一集按鈕)
+        // 4. 下一集按鈕
         const bNext = createQuickBtn('▶‖ ', () => {
             dp.notice("下一集");
             nextVideo();
         });
 
+        btnBox.appendChild(curEp);
         btnBox.appendChild(b10);
         btnBox.appendChild(bHead);
         btnBox.appendChild(bNext);
         
         const ir = d.querySelector('.dplayer-icons-right');
         ir.insertBefore(btnBox, ir.firstChild);
+        updateEpDisp(u); 
     }
   }
 
-  // 獨立下一集邏輯
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const u = dp ? dp.video.dataset.u : "";
@@ -146,7 +150,15 @@
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   }
 
+  function updateEpDisp(u) {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const i = bs.findIndex(b => b.dataset.u === u);
+    const el = d.getElementById("curEp");
+    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
+  }
+
   function hi(u) {
+    updateEpDisp(u);
     d.querySelectorAll(".btn-num").forEach(b => {
       const a = b.dataset.u === u;
       b.style.background = a ? "#0f0" : "#222";
