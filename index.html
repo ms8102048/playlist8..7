@@ -102,7 +102,8 @@
         // 1. 集數顯示框
         const curEp = d.createElement('div');
         curEp.id = "curEp";
-        curEp.style.cssText = 'font-size:11px; color:#0f0; border:1px solid #0f0; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold; background:rgba(0,255,0,0.1);';
+        // 減亮版：使用較暗的綠色 (#0a0) 並移除背景色，減輕視覺負擔
+        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
 
         const createQuickBtn = (text, action) => {
             const btn = d.createElement('div');
