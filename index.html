@@ -15,6 +15,7 @@
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
+    /* 修正 DPlayer 內部圖示間距 */
     .dplayer-icons-right { display: flex !important; align-items: center; }
   </style>
 </head>
@@ -27,7 +28,6 @@
 
 <div class="btn-group">
   <button id="T" class="btn-ctrl">收合/展開清單</button>
-  <button id="N" class="btn-ctrl" style="background: #a00;">▶ 下一集</button>
 </div>
 
 <div id="dplayer"></div>
@@ -35,15 +35,13 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
-  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), N = d.getElementById("N");
+  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T");
   let dp = null;
 
   window.onload = () => {
-    // 優先讀取上次快存以秒開介面
     const saved = localStorage.getItem("tv_l");
     if (saved) { L.value = saved; gen(); }
 
-    // 強制從伺服器抓取最新 list.txt (加入防快取設定)
     fetch('list.txt?t=' + Date.now(), {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
@@ -54,10 +52,9 @@
           L.value = text;
           localStorage.setItem("tv_l", text);
           gen();
-          console.log("清單已即時更新");
         }
       })
-      .catch(() => console.log("維持使用快存清單"))
+      .catch(() => console.log("維持使用快存"))
       .finally(() => {
         const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
         if (u) load(u, t);
@@ -95,11 +92,13 @@
         });
         dp.video.dataset.u = u;
         if (t > 0) dp.seek(t);
-        dp.on('ended', () => N.click());
+        dp.on('ended', () => nextVideo());
         
+        // --- 建立按鈕組：-10, Head, Next ---
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
-        const createQuickBtn = (text, seconds, notice) => {
+
+        const createQuickBtn = (text, action) => {
             const btn = d.createElement('div');
             btn.className = 'dplayer-icon';
             btn.style.width = 'auto';
@@ -107,26 +106,44 @@
             btn.innerHTML = `<div style="font-size:10px; font-weight:bold; background:rgba(255,255,255,0.15); padding:1px 5px; border-radius:3px; height:18px; display:flex; align-items:center; margin-top:8px;">${text}</div>`;
             btn.onclick = (e) => {
                 e.stopPropagation();
-                dp.seek(dp.video.currentTime + seconds);
-                dp.notice(notice);
+                action();
             };
             return btn;
         };
-        const b10 = createQuickBtn('◀10', -10, "倒退 10 秒");
-        const b85 = createQuickBtn('80▶', 80, "跳過 80 秒");  
+
+        // 1. 倒退 10 秒
+        const b10 = createQuickBtn('-10', () => {
+            dp.seek(dp.video.currentTime - 10);
+            dp.notice("倒退 10 秒");
+        });
+
+        // 2. 跳到 1:25 (85秒)
+        const bHead = createQuickBtn('Head', () => {
+            dp.seek(85);
+            dp.notice("跳至片頭 1:25");
+        });
+
+        // 3. Next 按鈕 (取代原本的下一集按鈕)
+        const bNext = createQuickBtn('Next', () => {
+            nextVideo();
+        });
+
         btnBox.appendChild(b10);
-        btnBox.appendChild(b85);
+        btnBox.appendChild(bHead);
+        btnBox.appendChild(bNext);
+        
         const ir = d.querySelector('.dplayer-icons-right');
         ir.insertBefore(btnBox, ir.firstChild);
     }
   }
 
-  N.onclick = () => {
+  // 獨立下一集邏輯
+  function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const u = dp ? dp.video.dataset.u : "";
     const i = bs.findIndex(b => b.dataset.u === u);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
-  };
+  }
 
   function hi(u) {
     d.querySelectorAll(".btn-num").forEach(b => {
