@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>純原生 HTML5 播放器</title>
+  <style>
+    body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
+    textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px; margin-bottom: 10px; }
+    #C { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+    .btn-ctrl { height: 40px; background: #444; color: #fff; border: none; border-radius: 4px; padding: 0 15px; cursor: pointer; margin-right: 5px; }
+    
+    /* 原生 Video 容器 */
+    .video-box { width: 100%; position: relative; background: #000; }
+    video { width: 100%; aspect-ratio: 16/9; display: block; border: 1px solid #333; }
+    
+    /* 自訂按鈕列 */
+    .controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; background: #111; padding: 10px; border-radius: 4px; }
+    #curEp { font-size: 12px; color: #0f0; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div id="UI">
+  <textarea id="L" placeholder="名稱$網址"></textarea>
+  <div id="C"></div>
+</div>
+
+<div class="btn-group">
+  <button onclick="document.getElementById('UI').toggleAttribute('hidden')" class="btn-ctrl">顯示/隱藏清單</button>
+  <button id="Sync" class="btn-ctrl" style="background:#1a3a5a">讀取 list.txt</button>
+</div>
+
+<div class="video-box">
+  <video id="v" controls playsinline></video>
+</div>
+
+<div class="controls">
+  <div id="curEp"></div>
+  <button class="btn-ctrl" onclick="v.currentTime -= 10">⏪ 10s</button>
+  <button class="btn-ctrl" onclick="v.currentTime = 85">↩️ 片頭</button>
+  <button class="btn-ctrl" onclick="nextVideo()">⏭️ 下一集</button>
+</div>
+
+<script>
+  const v = document.getElementById("v"), L = document.getElementById("L"), C = document.getElementById("C");
+
+  // 初始化與讀取緩存
+  window.onload = () => {
+    const savedL = localStorage.getItem("tv_l");
+    if (savedL) { L.value = savedL; gen(); }
+    const lastU = localStorage.getItem("tv_u"), lastT = localStorage.getItem("tv_last_time");
+    if (lastU) load(lastU, lastT);
+  };
+
+  // 解析清單並生成按鈕
+  function gen() {
+    C.innerHTML = '';
+    L.value.split('\n').filter(l => l.includes('http')).forEach((l, i) => {
+      const u = l.split('$').pop().trim();
+      const b = document.createElement("button");
+      b.className = "btn-num"; b.innerText = i + 1;
+      b.onclick = () => load(u, 0);
+      b.dataset.u = u;
+      C.appendChild(b);
+    });
+  }
+
+  // 載入影片 (純原生賦值)
+  function load(u, t) {
+    v.src = u; // 直接將 URL 給 src
+    v.load();
+    v.onloadedmetadata = () => {
+      if (t > 0) v.currentTime = t;
+      v.play().catch(()=>{}); // 避免自動播放受限錯誤
+    };
+    v.dataset.u = u;
+    hi(u);
+  }
+
+  // 自動下一集邏輯
+  v.onended = () => nextVideo();
+
+  function nextVideo() {
+    const buttons = Array.from(document.querySelectorAll(".btn-num"));
+    const idx = buttons.findIndex(b => b.dataset.u === v.dataset.u);
+    if (idx !== -1 && idx < buttons.length - 1) buttons[idx + 1].click();
+  }
+
+  // 醒目顯示當前集數
+  function hi(u) {
+    const buttons = document.querySelectorAll(".btn-num");
+    buttons.forEach((b, i) => {
+      const active = b.dataset.u === u;
+      b.style.background = active ? "#0f0" : "#222";
+      b.style.color = active ? "#000" : "#fff";
+      if (active) document.getElementById("curEp").innerText = `第 ${i+1} 集`;
+    });
+  }
+
+  // 監聽輸入並保存
+  L.oninput = () => { localStorage.setItem("tv_l", L.value); gen(); };
+
+  // 定時保存進度
+  setInterval(() => {
+    if (v.src && !v.paused) {
+      localStorage.setItem("tv_u", v.dataset.u);
+      localStorage.setItem("tv_last_time", v.currentTime);
+    }
+  }, 3000);
+
+  // 遠端讀取邏輯
+  document.getElementById("Sync").onclick = () => {
+    fetch('list.txt?t=' + Date.now()).then(r => r.text()).then(t => {
+      L.value = t; gen(); localStorage.setItem("tv_l", t);
+    });
+  };
+</script>
+</body>
+</html>
