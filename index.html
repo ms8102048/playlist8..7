@@ -12,14 +12,16 @@
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
     
     .btn-group { display: flex; gap: 5px; margin-bottom: 10px; }
-    button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 11px; white-space: nowrap; }
+    button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 12px; white-space: nowrap; }
     
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; flex: none; }
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
-    #BtnAuto { background: #333; color: #bbb; border: 1px solid #555; }
-    #BtnAuto.on { background: #5a1a1a; color: #f88; border: 1px solid #882d2d; }
+    
+    /* 自動同步按鈕樣式：僅名稱，顏色區分狀態 */
+    #BtnAuto { background: #333; color: #888; border: 1px solid #444; }
+    #BtnAuto.on { background: #822; color: #fcc; border: 1px solid #a33; }
     
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     #AutoNotice { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 128, 0, 0.9); color: white; padding: 8px 16px; border-radius: 20px; z-index: 9999; display: none; font-size: 14px; }
@@ -39,7 +41,7 @@
   <button id="T" class="btn-ctrl">展開/收合</button>
   <button id="BtnRead" class="btn-ctrl">讀取同步</button>
   <button id="BtnWrite" class="btn-ctrl">寫入同步</button>
-  <button id="BtnAuto" class="btn-ctrl">自動同步：關</button>
+  <button id="BtnAuto" class="btn-ctrl">自動同步</button>
 </div>
 
 <div id="dplayer"></div>
@@ -51,8 +53,7 @@
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), BtnAuto = d.getElementById("BtnAuto");
   let dp = null, isAuto = false;
 
-  // 🔴 請確保下方 URL 是你最新的部署網址
-  const API_URL = "https://script.google.com/macros/s/AKfycbzqF0HvyElmtIv5DO5iUUllDiIjj9T4CJYJ-gUpTsF0iyS7bPUunREFtJ0KX0pNUBw10g/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
 
   function showNotice(msg) {
     NT.innerText = msg; NT.style.display = 'block';
@@ -61,7 +62,6 @@
 
   function toggleAuto(state, syncToCloud = true) {
     isAuto = (state === true || state === "true");
-    BtnAuto.innerText = isAuto ? "自動同步：開" : "自動同步：關";
     isAuto ? BtnAuto.classList.add("on") : BtnAuto.classList.remove("on");
     localStorage.setItem("tv_auto", isAuto);
     if (syncToCloud) uploadData(true);
@@ -78,6 +78,7 @@
         L.value = data.list;
         localStorage.setItem("tv_l", data.list);
         gen();
+        // 確保先加載影片，再進行跳轉
         if (data.url) load(data.url, data.time || 0);
         if (data.auto !== undefined) toggleAuto(data.auto, false);
         if (!isInitial) showNotice("✅ 讀取成功");
@@ -91,12 +92,17 @@
 
   function uploadData(isSilent = false) {
     if (!isSilent) BtnWrite.innerText = "寫入中...";
+    // 獲取當前精確時間
+    const curTime = dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0);
+    const curUrl = dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || "");
+    
     const payload = {
       list: L.value,
-      url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
-      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0),
+      url: curUrl,
+      time: curTime,
       auto: isAuto
     };
+    
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
     .then(() => { 
       if (!isSilent) { showNotice("💾 寫入成功"); BtnWrite.innerText = "寫入同步"; } 
@@ -111,14 +117,15 @@
     if (saved) { L.value = saved; gen(); }
     const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
     if (u) load(u, t);
-    fetchCloudData(true); // 開啟網頁自動從試算表讀取最新進度
+    fetchCloudData(true);
   };
 
+  // 每一分鐘同步一次進度，確保秒數寫入
   setInterval(() => {
     if (isAuto && dp && !dp.video.paused && dp.video.currentTime > 0) {
       uploadData(true);
     }
-  }, 30000);
+  }, 60000);
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
   
@@ -129,7 +136,7 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => { load(u, 0); if(isAuto) uploadData(true); };
+      b.onclick = () => { load(u, 0); if(isAuto) setTimeout(()=>uploadData(true), 1000); };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -140,12 +147,14 @@
     if (dp) {
         dp.switchVideo({ url: u, type: 'hls' });
         dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.play();
+        // 增加延遲跳轉，確保影片載入後秒數正確
+        setTimeout(() => { if (t > 0) dp.seek(t); dp.play(); }, 500);
     } else {
         dp = new DPlayer({ container: d.getElementById('dplayer'), autoplay: true, hotkey: true, video: { url: u, type: 'hls' } });
-        dp.video.dataset.u = u; if (t > 0) dp.seek(t);
+        dp.video.dataset.u = u; 
+        setTimeout(() => { if (t > 0) dp.seek(t); }, 500);
         dp.on('ended', () => nextVideo());
+        // 原有控制按鈕...
         const btnBox = d.createElement('div'); btnBox.style.cssText = 'display:flex; align-items:center;';
         const curEp = d.createElement('div'); curEp.id = "curEp"; curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
         const createQuickBtn = (text, action) => {
@@ -160,31 +169,12 @@
     }
   }
 
-  function nextVideo() {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
-    const i = bs.findIndex(b => b.dataset.u === u);
-    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
-  }
-
-  function updateEpDisp(u) {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const i = bs.findIndex(b => b.dataset.u === u);
-    const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
-  }
-
-  function hi(u) {
-    updateEpDisp(u);
-    d.querySelectorAll(".btn-num").forEach(b => {
-      const a = b.dataset.u === u;
-      b.style.background = a ? "#0f0" : "#222";
-      b.style.color = a ? "#000" : "#fff";
-    });
-  }
-
+  function nextVideo() { const bs = Array.from(d.querySelectorAll(".btn-num")); const u = dp ? dp.video.dataset.u : ""; const i = bs.findIndex(b => b.dataset.u === u); if (i !== -1 && i < bs.length - 1) bs[i + 1].click(); }
+  function updateEpDisp(u) { const bs = Array.from(d.querySelectorAll(".btn-num")); const i = bs.findIndex(b => b.dataset.u === u); const el = d.getElementById("curEp"); if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : ""; }
+  function hi(u) { updateEpDisp(u); d.querySelectorAll(".btn-num").forEach(b => { const a = b.dataset.u === u; b.style.background = a ? "#0f0" : "#222"; b.style.color = a ? "#000" : "#fff"; }); }
   L.oninput = () => { localStorage.setItem("tv_l", L.value); gen(); };
-
+  
+  // 每3秒本地暫存一次
   setInterval(() => {
     if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
       localStorage.setItem("tv_u", dp.video.dataset.u);
