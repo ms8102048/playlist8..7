@@ -1,38 +1,197 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>寫入測試</title></head>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Git 播放器</title>
+  <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
+  <style>
+    body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
+    #UI { transition: all 0.3s; }
+    textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
+    #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn-group { display: flex; gap: 10px; margin-bottom: 10px; }
+    button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
+    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
+    .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
+    #Sync { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
+    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
+    .dplayer-icons-right { display: flex !important; align-items: center; }
+  </style>
+</head>
 <body>
-    <h2>Google 試算表寫入測試</h2>
-    <button onclick="testWrite()">點我把資料改為「成功寫入」</button>
-    <div id="output" style="margin-top:20px; border:1px solid #ccc; padding:15px;">等待操作...</div>
 
-    <script>
-        const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
+<div id="UI">
+  <textarea id="L" placeholder="在此貼入清單 (格式: 名稱$網址)"></textarea>
+  <div id="C"></div>
+</div>
 
-        function testWrite() {
-            const out = document.getElementById('output');
-            out.innerText = "上傳中...";
+<div class="btn-group">
+  <button id="T" class="btn-ctrl">收合/展開清單</button>
+  <button id="Sync" class="btn-ctrl">雲端同步進度</button>
+</div>
 
-            const payload = {
-                list: "寫入成功了",
-                url: "SUCCESS_URL",
-                time: 888
-            };
+<div id="dplayer"></div>
 
-            // 使用 POST 發送資料
-            fetch(API_URL, {
-                method: "POST",
-                mode: "no-cors", // 重要：跨網域寫入必須用 no-cors
-                headers: { "Content-Type": "text/plain" },
-                body: JSON.stringify(payload)
-            })
-            .then(() => {
-                out.innerHTML = "<b style='color:blue;'>指令已發出！</b><br>請現在去打開你的 Google 試算表，看看內容有沒有變。";
-            })
-            .catch(err => {
-                out.innerText = "寫入發生錯誤: " + err;
-            });
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
+<script>
+  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
+  let dp = null;
+
+  // 1. 填入你剛才測試成功的 API 網址
+  const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
+
+  window.onload = () => {
+    const saved = localStorage.getItem("tv_l");
+    if (saved) { L.value = saved; gen(); }
+    const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
+    if (u) load(u, t);
+  };
+
+  // 2. 修改 Sync 按鈕邏輯 (整合 JSONP 讀取與 POST 寫入)
+  S.onclick = () => {
+    const choice = confirm("雲端同步選項：\n【確定】從雲端「讀取」清單與進度\n【取消】將目前清單與進度「上傳」備份");
+    
+    if (choice) {
+      // --- 執行讀取 (JSONP) ---
+      S.innerText = "讀取中...";
+      const cbName = 'jsonp_' + Date.now();
+      const script = d.createElement('script');
+      
+      window[cbName] = (data) => {
+        if (data && data.list) {
+          L.value = data.list;
+          localStorage.setItem("tv_l", data.list);
+          gen();
+          // 如果雲端有儲存上次播放的網址，則自動載入
+          if (data.url) load(data.url, data.time || 0);
+          alert("✅ 雲端同步讀取成功！");
         }
-    </script>
+        delete window[cbName];
+        d.body.removeChild(script);
+        S.innerText = "雲端同步進度";
+      };
+
+      script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
+      d.body.appendChild(script);
+
+    } else {
+      // --- 執行寫入 (POST) ---
+      S.innerText = "上傳中...";
+      const payload = {
+        list: L.value,
+        url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
+        time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0)
+      };
+
+      fetch(API_URL, {
+        method: "POST",
+        mode: "no-cors", // 跨網域寫入關鍵
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+      }).then(() => {
+        alert("💾 進度已成功備份至雲端！");
+        S.innerText = "雲端同步進度";
+      }).catch(e => {
+        alert("上傳失敗，請檢查 API 網址");
+        S.innerText = "雲端同步進度";
+      });
+    }
+  };
+
+  T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
+
+  function gen() {
+    const lines = L.value.split('\n').filter(l => l.includes('http'));
+    C.innerHTML = '';
+    lines.forEach((l, i) => {
+      const u = l.split('$').pop().trim();
+      const b = d.createElement("button");
+      b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
+      b.onclick = () => load(u, 0);
+      C.appendChild(b);
+    });
+    if (dp) hi(dp.video.dataset.u);
+  }
+
+  function load(u, t) {
+    hi(u);
+    if (dp) {
+        dp.switchVideo({ url: u, type: 'hls' });
+        dp.video.dataset.u = u;
+        if (t > 0) dp.seek(t);
+        dp.play();
+    } else {
+        dp = new DPlayer({
+            container: d.getElementById('dplayer'),
+            autoplay: true,
+            hotkey: true,
+            video: { url: u, type: 'hls' }
+        });
+        dp.video.dataset.u = u;
+        if (t > 0) dp.seek(t);
+        dp.on('ended', () => nextVideo());
+        
+        const btnBox = d.createElement('div');
+        btnBox.style.cssText = 'display:flex; align-items:center;';
+
+        const curEp = d.createElement('div');
+        curEp.id = "curEp";
+        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+
+        const createQuickBtn = (text, action) => {
+            const btn = d.createElement('div');
+            btn.className = 'dplayer-icon';
+            btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center; cursor:pointer;';
+            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+            btn.onclick = (e) => { e.stopPropagation(); action(); };
+            return btn;
+        };
+
+        btnBox.appendChild(curEp);
+        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); }));
+        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); dp.notice("跳至片頭"); }));
+        btnBox.appendChild(createQuickBtn('⏭️', () => { dp.notice("下一集"); nextVideo(); }));
+        
+        const ir = d.querySelector('.dplayer-icons-right');
+        ir.insertBefore(btnBox, ir.firstChild);
+        updateEpDisp(u); 
+    }
+  }
+
+  function nextVideo() {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const u = dp ? dp.video.dataset.u : "";
+    const i = bs.findIndex(b => b.dataset.u === u);
+    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
+  }
+
+  function updateEpDisp(u) {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const i = bs.findIndex(b => b.dataset.u === u);
+    const el = d.getElementById("curEp");
+    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
+  }
+
+  function hi(u) {
+    updateEpDisp(u);
+    d.querySelectorAll(".btn-num").forEach(b => {
+      const a = b.dataset.u === u;
+      b.style.background = a ? "#0f0" : "#222";
+      b.style.color = a ? "#000" : "#fff";
+    });
+  }
+
+  L.oninput = () => { localStorage.setItem("tv_l", L.value); gen(); };
+
+  setInterval(() => {
+    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
+      localStorage.setItem("tv_u", dp.video.dataset.u);
+      localStorage.setItem("tv_last_time", dp.video.currentTime);
+    }
+  }, 3000);
+</script>
 </body>
 </html>
