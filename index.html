@@ -47,19 +47,53 @@
     if (u) load(u, t);
   };
 
-  S.onclick = () => {
-    if (!confirm("確定要從伺服器讀取 list.txt 並覆蓋目前清單嗎？")) return;
-    fetch('list.txt?t=' + Date.now(), { cache: 'no-store' })
-    .then(res => res.ok ? res.text() : Promise.reject())
-    .then(text => {
-      if (text.trim()) {
-        L.value = text;
-        localStorage.setItem("tv_l", text);
-        gen();
-        alert("清單已更新");
-      }
-    }).catch(() => alert("讀取失敗"));
-  };
+  // 1. 貼上你剛才得到的 GAS 網址
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpTqZqGIAKDHNjfam2aNC1i0UtCRNxhSlgJuZwbCspUUS_jlFMCv7tmrHJo8x2Oe4Vhg/exec";
+
+S.innerText = "同步雲端進度";
+
+S.onclick = async () => {
+    // 詢問使用者要讀取還是上傳
+    const choice = confirm("同步雲端進度：\n【確定】讀取雲端進度並覆蓋本地\n【取消】將目前進度上傳至雲端");
+    
+    if (choice) {
+        // --- 讀取 (GET) ---
+        S.innerText = "讀取中...";
+        try {
+            const res = await fetch(GOOGLE_SCRIPT_URL);
+            const data = await res.json();
+            if (data.list) {
+                L.value = data.list;
+                localStorage.setItem("tv_l", data.list);
+                gen();
+                load(data.url, data.time);
+                alert("已同步至最新進度！");
+            }
+        } catch (e) {
+            alert("讀取雲端失敗，請確認 API 部署正確。");
+        }
+    } else {
+        // --- 上傳 (POST) ---
+        S.innerText = "上傳中...";
+        const payload = {
+            list: L.value,
+            url: dp.video.dataset.u,
+            time: dp.video.currentTime
+        };
+        // 使用 fetch 發送資料
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+            alert("目前進度已存至雲端！");
+        } catch (e) {
+            // 因為跨網域限制，POST 有時會觸發報錯但其實成功，若試算表有增加資料即可忽略
+            alert("上傳指令已送出！");
+        }
+    }
+    S.innerText = "同步雲端進度";
+};
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
 
