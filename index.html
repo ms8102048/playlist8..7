@@ -14,8 +14,12 @@
     .btn-group { display: flex; gap: 10px; margin-bottom: 10px; }
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
+    /* 功能按鈕樣式 */
     .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
-    #Sync { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
+    /* 讀取按鈕：藍色調 */
+    #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
+    /* 寫入按鈕：綠色調 */
+    #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     .dplayer-icons-right { display: flex !important; align-items: center; }
   </style>
@@ -29,7 +33,11 @@
 
 <div class="btn-group">
   <button id="T" class="btn-ctrl">收合/展開清單</button>
-  <button id="Sync" class="btn-ctrl">雲端同步進度</button>
+</div>
+
+<div class="btn-group">
+  <button id="BtnRead" class="btn-ctrl">讀取同步進度</button>
+  <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
 </div>
 
 <div id="dplayer"></div>
@@ -37,10 +45,10 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
-  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
+  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T");
+  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
 
-  // 1. 填入你剛才測試成功的 API 網址
   const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
 
   window.onload = () => {
@@ -50,55 +58,54 @@
     if (u) load(u, t);
   };
 
-  // 2. 修改 Sync 按鈕邏輯 (整合 JSONP 讀取與 POST 寫入)
-  S.onclick = () => {
-    const choice = confirm("雲端同步選項：\n【確定】從雲端「讀取」清單與進度\n【取消】將目前清單與進度「上傳」備份");
+  // --- 1. 讀取同步進度 (從雲端抓資料) ---
+  BtnRead.onclick = () => {
+    if(!confirm("確定要從雲端讀取進度嗎？(這將覆蓋目前清單)")) return;
     
-    if (choice) {
-      // --- 執行讀取 (JSONP) ---
-      S.innerText = "讀取中...";
-      const cbName = 'jsonp_' + Date.now();
-      const script = d.createElement('script');
-      
-      window[cbName] = (data) => {
-        if (data && data.list) {
-          L.value = data.list;
-          localStorage.setItem("tv_l", data.list);
-          gen();
-          // 如果雲端有儲存上次播放的網址，則自動載入
-          if (data.url) load(data.url, data.time || 0);
-          alert("✅ 雲端同步讀取成功！");
-        }
-        delete window[cbName];
-        d.body.removeChild(script);
-        S.innerText = "雲端同步進度";
-      };
+    BtnRead.innerText = "讀取中...";
+    const cbName = 'jsonp_' + Date.now();
+    const script = d.createElement('script');
+    
+    window[cbName] = (data) => {
+      if (data && data.list) {
+        L.value = data.list;
+        localStorage.setItem("tv_l", data.list);
+        gen();
+        if (data.url) load(data.url, data.time || 0);
+        alert("✅ 讀取成功！");
+      } else {
+        alert("雲端目前沒有資料。");
+      }
+      delete window[cbName];
+      d.body.removeChild(script);
+      BtnRead.innerText = "讀取同步進度";
+    };
 
-      script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
-      d.body.appendChild(script);
+    script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
+    d.body.appendChild(script);
+  };
 
-    } else {
-      // --- 執行寫入 (POST) ---
-      S.innerText = "上傳中...";
-      const payload = {
-        list: L.value,
-        url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
-        time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0)
-      };
+  // --- 2. 寫入同步進度 (把目前狀態存到雲端) ---
+  BtnWrite.onclick = () => {
+    BtnWrite.innerText = "儲存中...";
+    const payload = {
+      list: L.value,
+      url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
+      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0)
+    };
 
-      fetch(API_URL, {
-        method: "POST",
-        mode: "no-cors", // 跨網域寫入關鍵
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(payload)
-      }).then(() => {
-        alert("💾 進度已成功備份至雲端！");
-        S.innerText = "雲端同步進度";
-      }).catch(e => {
-        alert("上傳失敗，請檢查 API 網址");
-        S.innerText = "雲端同步進度";
-      });
-    }
+    fetch(API_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(payload)
+    }).then(() => {
+      alert("💾 寫入雲端成功！");
+      BtnWrite.innerText = "寫入同步進度";
+    }).catch(() => {
+      alert("寫入失敗，請檢查 API 網址或網路");
+      BtnWrite.innerText = "寫入同步進度";
+    });
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -136,7 +143,6 @@
         
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
-
         const curEp = d.createElement('div');
         curEp.id = "curEp";
         curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
@@ -151,12 +157,12 @@
         };
 
         btnBox.appendChild(curEp);
-        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); }));
-        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); dp.notice("跳至片頭"); }));
-        btnBox.appendChild(createQuickBtn('⏭️', () => { dp.notice("下一集"); nextVideo(); }));
+        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
         
         const ir = d.querySelector('.dplayer-icons-right');
-        ir.insertBefore(btnBox, ir.firstChild);
+        if (ir) ir.insertBefore(btnBox, ir.firstChild);
         updateEpDisp(u); 
     }
   }
