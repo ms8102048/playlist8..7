@@ -29,7 +29,7 @@
 
 <div class="btn-group">
   <button id="T" class="btn-ctrl">收合/展開清單</button>
-  <button id="Sync" class="btn-ctrl">讀取伺服器的list.txt</button>
+  <button id="Sync" class="btn-ctrl">雲端同步進度</button>
 </div>
 
 <div id="dplayer"></div>
@@ -40,6 +40,9 @@
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
   let dp = null;
 
+  // --- 務必將下方網址換成你的 GAS URL ---
+  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/library/d/1yMiM5m9LxomC8iGKXTrlxi6O-p9gzdbPCwQ4iE1YCZN-R4Byq59gfP6u/3"; 
+
   window.onload = () => {
     const saved = localStorage.getItem("tv_l");
     if (saved) { L.value = saved; gen(); }
@@ -47,14 +50,9 @@
     if (u) load(u, t);
   };
 
-  // 1. 貼上你剛才得到的 GAS 網址
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx2doyIQVu1SqlIiE_uxKnCxVW4beNx_5L7a01DqZ1rBbYWzUHYPhm4iRUahIuKfMm8JA/exec";
-
-S.innerText = "同步雲端進度";
-
-S.onclick = async () => {
-    // 詢問使用者要讀取還是上傳
-    const choice = confirm("同步雲端進度：\n【確定】讀取雲端進度並覆蓋本地\n【取消】將目前進度上傳至雲端");
+  // 同步按鈕邏輯
+  S.onclick = async () => {
+    const choice = confirm("同步雲端進度：\n【確定】從雲端讀取進度\n【取消】將目前進度上傳雲端");
     
     if (choice) {
         // --- 讀取 (GET) ---
@@ -62,38 +60,42 @@ S.onclick = async () => {
         try {
             const res = await fetch(GOOGLE_SCRIPT_URL);
             const data = await res.json();
-            if (data.list) {
+            if (data.list && data.list.trim() !== "") {
                 L.value = data.list;
                 localStorage.setItem("tv_l", data.list);
                 gen();
-                load(data.url, data.time);
+                if (data.url) load(data.url, data.time || 0);
                 alert("已同步至最新進度！");
+            } else {
+                alert("雲端資料庫目前是空的。");
             }
-        } catch (e) {
-            alert("讀取雲端失敗，請確認 API 部署正確。");
+        } catch (e) { 
+            alert("讀取失敗，請確認 API 網址是否正確。"); 
         }
     } else {
         // --- 上傳 (POST) ---
         S.innerText = "上傳中...";
         const payload = {
             list: L.value,
-            url: dp.video.dataset.u,
-            time: dp.video.currentTime
+            url: dp ? dp.video.dataset.u : "",
+            time: dp ? dp.video.currentTime : 0
         };
-        // 使用 fetch 發送資料
-        try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: "POST",
-                body: JSON.stringify(payload)
-            });
-            alert("目前進度已存至雲端！");
-        } catch (e) {
-            // 因為跨網域限制，POST 有時會觸發報錯但其實成功，若試算表有增加資料即可忽略
-            alert("上傳指令已送出！");
-        }
+        
+        fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify(payload)
+        }).then(() => {
+            alert("進度已存至雲端！");
+        }).catch(() => {
+            alert("發送要求已送出。");
+        }).finally(() => {
+            S.innerText = "雲端同步進度";
+        });
     }
-    S.innerText = "同步雲端進度";
-};
+    S.innerText = "雲端同步進度";
+  };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
 
@@ -130,7 +132,6 @@ S.onclick = async () => {
         
         const btnBox = d.createElement('div');
         btnBox.style.cssText = 'display:flex; align-items:center;';
-
         const curEp = d.createElement('div');
         curEp.id = "curEp";
         curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
@@ -139,20 +140,15 @@ S.onclick = async () => {
             const btn = d.createElement('div');
             btn.className = 'dplayer-icon';
             btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center;';
-            // 將 margin-top 從 8px 調低到 6px 以對齊水平線，並移除背景框
             btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
             btn.onclick = (e) => { e.stopPropagation(); action(); };
             return btn;
         };
 
-        const b10 = createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); dp.notice("倒退 10 秒"); });
-        const bHead = createQuickBtn('↩️', () => { dp.seek(85); dp.notice("跳至片頭"); });
-        const bNext = createQuickBtn('⏭️', () => { dp.notice("下一集"); nextVideo(); });
-
         btnBox.appendChild(curEp);
-        btnBox.appendChild(b10);
-        btnBox.appendChild(bHead);
-        btnBox.appendChild(bNext);
+        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
         
         const ir = d.querySelector('.dplayer-icons-right');
         ir.insertBefore(btnBox, ir.firstChild);
