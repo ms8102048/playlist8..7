@@ -1,50 +1,37 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>讀取測試</title>
-</head>
+<head><meta charset="UTF-8"><title>寫入測試</title></head>
 <body>
-    <h2>Google 試算表讀取測試</h2>
-    <button onclick="testRead()">點我讀取雲端資料</button>
-    <div id="output" style="margin-top:20px; border:1px solid #ccc; padding:15px; background:#f9f9f9; min-height:50px;">
-        等待點擊按鈕...
-    </div>
+    <h2>Google 試算表寫入測試</h2>
+    <button onclick="testWrite()">點我把資料改為「成功寫入」</button>
+    <div id="output" style="margin-top:20px; border:1px solid #ccc; padding:15px;">等待操作...</div>
 
     <script>
-        // 這是你最新部署的網址
         const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
 
-        function testRead() {
+        function testWrite() {
             const out = document.getElementById('output');
-            out.innerText = "讀取中，請稍候...";
-            
-            // 1. 建立一個隨機的 Callback 名稱
-            const cbName = 'jsonp_' + Date.now();
-            
-            // 2. 在 window 物件下定義這個函數，讓 GAS 回傳後執行
-            window[cbName] = function(data) {
-                out.innerHTML = `
-                    <p style="color:green; font-weight:bold;">✅ 讀取成功！</p>
-                    <b>清單內容：</b> ${data.list} <br>
-                    <b>目前網址：</b> ${data.url} <br>
-                    <b>播放時間：</b> ${data.time}
-                `;
-                // 執行完後清理掉標籤與函數
-                delete window[cbName];
-                document.body.removeChild(script);
+            out.innerText = "上傳中...";
+
+            const payload = {
+                list: "寫入成功了",
+                url: "SUCCESS_URL",
+                time: 888
             };
 
-            // 3. 發送請求，務必在網址後方帶上 callback 參數
-            const script = document.createElement('script');
-            script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
-            
-            // 如果 10 秒沒反應，顯示錯誤
-            script.onerror = () => {
-                out.innerHTML = '<span style="color:red;">讀取失敗，請檢查網路或 API 網址。</span>';
-            };
-
-            document.body.appendChild(script);
+            // 使用 POST 發送資料
+            fetch(API_URL, {
+                method: "POST",
+                mode: "no-cors", // 重要：跨網域寫入必須用 no-cors
+                headers: { "Content-Type": "text/plain" },
+                body: JSON.stringify(payload)
+            })
+            .then(() => {
+                out.innerHTML = "<b style='color:blue;'>指令已發出！</b><br>請現在去打開你的 Google 試算表，看看內容有沒有變。";
+            })
+            .catch(err => {
+                out.innerText = "寫入發生錯誤: " + err;
+            });
         }
     </script>
 </body>
