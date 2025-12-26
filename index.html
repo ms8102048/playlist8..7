@@ -4,27 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Git 播放器</title>
-  <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { transition: all 0.3s; }
     textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-    .btn-group { display: flex; gap: 10px; margin-bottom: 10px; }
-    button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
-    /* 功能按鈕樣式 */
-    .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
-    /* 讀取按鈕：藍色調 */
+    
+    /* 按鈕列排版：讓三個按鈕平分空間 */
+    .btn-group { display: flex; gap: 8px; margin-bottom: 10px; }
+    button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 13px; }
+    
+    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; flex: none; }
+    .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
-    /* 寫入按鈕：綠色調 */
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
+    
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     .dplayer-icons-right { display: flex !important; align-items: center; }
+
+    /* 自動消失的通知樣式 */
+    #AutoNotice { 
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
+      border-radius: 20px; z-index: 9999; display: none; font-weight: bold;
+    }
   </style>
 </head>
 <body>
+
+<div id="AutoNotice">成功</div>
 
 <div id="UI">
   <textarea id="L" placeholder="在此貼入清單 (格式: 名稱$網址)"></textarea>
@@ -32,12 +41,9 @@
 </div>
 
 <div class="btn-group">
-  <button id="T" class="btn-ctrl">收合/展開清單</button>
-</div>
-
-<div class="btn-group">
-  <button id="BtnRead" class="btn-ctrl">讀取同步進度</button>
-  <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
+  <button id="T" class="btn-ctrl">展開/收合</button>
+  <button id="BtnRead" class="btn-ctrl">讀取雲端</button>
+  <button id="BtnWrite" class="btn-ctrl">寫入雲端</button>
 </div>
 
 <div id="dplayer"></div>
@@ -45,11 +51,18 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
-  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T");
+  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
 
   const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
+
+  // 自動顯示通知 1 秒
+  function showNotice(msg) {
+    NT.innerText = msg;
+    NT.style.display = 'block';
+    setTimeout(() => { NT.style.display = 'none'; }, 1000);
+  }
 
   window.onload = () => {
     const saved = localStorage.getItem("tv_l");
@@ -58,10 +71,8 @@
     if (u) load(u, t);
   };
 
-  // --- 1. 讀取同步進度 (從雲端抓資料) ---
+  // 讀取進度
   BtnRead.onclick = () => {
-    if(!confirm("確定要從雲端讀取進度嗎？(這將覆蓋目前清單)")) return;
-    
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
     const script = d.createElement('script');
@@ -72,22 +83,21 @@
         localStorage.setItem("tv_l", data.list);
         gen();
         if (data.url) load(data.url, data.time || 0);
-        alert("✅ 讀取成功！");
-      } else {
-        alert("雲端目前沒有資料。");
+        showNotice("✅ 讀取成功");
       }
       delete window[cbName];
       d.body.removeChild(script);
-      BtnRead.innerText = "讀取同步進度";
+      BtnRead.innerText = "讀取雲端";
     };
 
+    script.onerror = () => { alert("讀取發生錯誤"); BtnRead.innerText = "讀取雲端"; };
     script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
     d.body.appendChild(script);
   };
 
-  // --- 2. 寫入同步進度 (把目前狀態存到雲端) ---
+  // 寫入進度
   BtnWrite.onclick = () => {
-    BtnWrite.innerText = "儲存中...";
+    BtnWrite.innerText = "寫入中...";
     const payload = {
       list: L.value,
       url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
@@ -97,14 +107,13 @@
     fetch(API_URL, {
       method: "POST",
       mode: "no-cors",
-      headers: { "Content-Type": "text/plain" },
       body: JSON.stringify(payload)
     }).then(() => {
-      alert("💾 寫入雲端成功！");
-      BtnWrite.innerText = "寫入同步進度";
+      showNotice("💾 寫入成功");
+      BtnWrite.innerText = "寫入雲端";
     }).catch(() => {
-      alert("寫入失敗，請檢查 API 網址或網路");
-      BtnWrite.innerText = "寫入同步進度";
+      alert("寫入失敗");
+      BtnWrite.innerText = "寫入雲端";
     });
   };
 
