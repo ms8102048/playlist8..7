@@ -40,7 +40,7 @@
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
   let dp = null;
 
-  // 1. 你的 API 網址
+  // 使用你提供的新版本網址
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2u0uFIZKYVu53Q5aSutz57vbrUuZhZGfPeWOUZ4u93ZU-f7ICdqxpVnsf61AarEQnsg/exec";
 
   window.onload = () => {
@@ -50,53 +50,54 @@
     if (u) load(u, t);
   };
 
-  // 2. 核心同步功能 (JSONP 模式)
+  // 核心同步邏輯
   S.onclick = () => {
-    const choice = confirm("雲端同步：\n【確定】從雲端「讀取」進度\n【取消】將目前進度「上傳」雲端");
+    const choice = confirm("同步雲端進度：\n【確定】從雲端讀取 (覆蓋本地)\n【取消】將目前進度同步至雲端");
     
     if (choice) {
-        // --- 讀取邏輯 ---
-        S.innerText = "讀取中...";
-        const cbName = 'callback_' + Date.now();
-        const script = d.createElement('script');
-        
-        window[cbName] = (data) => {
-            if (data && data.list) {
-                L.value = data.list;
-                localStorage.setItem("tv_l", data.list);
-                gen();
-                if (data.url) load(data.url, data.time || 0);
-                alert("已載入雲端進度！");
-            }
-            delete window[cbName];
-            d.body.removeChild(script);
-            S.innerText = "雲端同步進度";
-        };
+      // --- 讀取 (JSONP 模式) ---
+      S.innerText = "讀取中...";
+      const cbName = 'jsonp_' + Date.now();
+      const script = d.createElement('script');
+      
+      window[cbName] = (data) => {
+        if (data && data.list) {
+          L.value = data.list;
+          localStorage.setItem("tv_l", data.list);
+          gen();
+          if (data.url) load(data.url, data.time || 0);
+          alert("雲端同步成功！");
+        } else {
+          alert("雲端目前沒有資料。");
+        }
+        delete window[cbName];
+        d.body.removeChild(script);
+        S.innerText = "雲端同步進度";
+      };
 
-        script.src = `${GOOGLE_SCRIPT_URL}?callback=${cbName}&t=${Date.now()}`;
-        d.body.appendChild(script);
+      script.src = `${GOOGLE_SCRIPT_URL}?callback=${cbName}&t=${Date.now()}`;
+      d.body.appendChild(script);
 
     } else {
-        // --- 上傳邏輯 ---
-        S.innerText = "上傳中...";
-        const payload = {
-            list: L.value,
-            url: dp ? dp.video.dataset.u : "",
-            time: dp ? dp.video.currentTime : 0
-        };
+      // --- 上傳 ---
+      S.innerText = "上傳中...";
+      const payload = {
+        list: L.value,
+        url: dp ? dp.video.dataset.u : "",
+        time: dp ? dp.video.currentTime : 0
+      };
 
-        fetch(GOOGLE_SCRIPT_URL, {
-            method: "POST",
-            mode: "no-cors",
-            headers: { "Content-Type": "text/plain" },
-            body: JSON.stringify(payload)
-        }).then(() => {
-            alert("進度已備份至雲端！");
-            S.innerText = "雲端同步進度";
-        }).catch(() => {
-            alert("上傳指令已發出");
-            S.innerText = "雲端同步進度";
-        });
+      fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        body: JSON.stringify(payload)
+      }).then(() => {
+        alert("目前進度已存至雲端！");
+        S.innerText = "雲端同步進度";
+      }).catch(() => {
+        alert("已嘗試上傳");
+        S.innerText = "雲端同步進度";
+      });
     }
   };
 
