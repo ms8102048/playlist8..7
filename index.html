@@ -4,38 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Git 播放器</title>
-  <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { transition: all 0.3s; }
     textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-    
-    /* 按鈕列排版：讓三個按鈕平分空間 */
     .btn-group { display: flex; gap: 8px; margin-bottom: 10px; }
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 13px; }
-    
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; flex: none; }
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
-    
+    #BtnAuto { background: #333; color: #bbb; border: 1px solid #555; }
+    #BtnAuto.on { background: #5a1a1a; color: #f88; border: 1px solid #882d2d; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    .dplayer-icons-right { display: flex !important; align-items: center; }
-
-    /* 自動消失的通知樣式 */
-    #AutoNotice { 
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
-      border-radius: 20px; z-index: 9999; display: none; font-weight: bold;
-    }
+    #AutoNotice { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px; border-radius: 20px; z-index: 9999; display: none; font-weight: bold; }
   </style>
 </head>
 <body>
 
 <div id="AutoNotice">成功</div>
-
 <div id="UI">
   <textarea id="L" placeholder="在此貼入清單 (格式: 名稱$網址)"></textarea>
   <div id="C"></div>
@@ -43,8 +32,9 @@
 
 <div class="btn-group">
   <button id="T" class="btn-ctrl">展開/收合</button>
-  <button id="BtnRead" class="btn-ctrl">讀取同步進度</button>
-  <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
+  <button id="BtnRead" class="btn-ctrl">讀取雲端</button>
+  <button id="BtnWrite" class="btn-ctrl">寫入雲端</button>
+  <button id="BtnAuto" class="btn-ctrl">自動同步：關</button>
 </div>
 
 <div id="dplayer"></div>
@@ -53,70 +43,89 @@
 <script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
-  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
-  let dp = null;
+  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), BtnAuto = d.getElementById("BtnAuto");
+  let dp = null, isAuto = false;
 
   const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
 
-  // 自動顯示通知 1 秒
   function showNotice(msg) {
-    NT.innerText = msg;
-    NT.style.display = 'block';
+    NT.innerText = msg; NT.style.display = 'block';
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  window.onload = () => {
-    const saved = localStorage.getItem("tv_l");
-    if (saved) { L.value = saved; gen(); }
-    const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
-    if (u) load(u, t);
-  };
+  function toggleAuto(state, syncToCloud = true) {
+    isAuto = state;
+    if (isAuto) {
+      BtnAuto.innerText = "自動同步：開";
+      BtnAuto.classList.add("on");
+    } else {
+      BtnAuto.innerText = "自動同步：關";
+      BtnAuto.classList.remove("on");
+    }
+    localStorage.setItem("tv_auto", isAuto);
+    if (syncToCloud) uploadData(true);
+  }
 
-  // 讀取同步進度
-  BtnRead.onclick = () => {
-    BtnRead.innerText = "讀取中...";
+  BtnAuto.onclick = () => toggleAuto(!isAuto);
+
+  // --- 核心修改：讀取函數封裝 ---
+  function fetchCloudData(isInitial = false) {
+    if (!isInitial) BtnRead.innerText = "讀取中...";
+    
     const cbName = 'jsonp_' + Date.now();
     const script = d.createElement('script');
-    
     window[cbName] = (data) => {
       if (data && data.list) {
         L.value = data.list;
         localStorage.setItem("tv_l", data.list);
         gen();
         if (data.url) load(data.url, data.time || 0);
-        showNotice("✅ 讀取成功");
+        if (data.auto !== undefined) {
+          // 如果是第一次載入，不觸發上傳，純粹同步狀態
+          toggleAuto(data.auto === true || data.auto === "true", false);
+        }
+        if (!isInitial) showNotice("✅ 讀取成功");
       }
-      delete window[cbName];
-      d.body.removeChild(script);
-      BtnRead.innerText = "讀取同步進度";
+      delete window[cbName]; d.body.removeChild(script);
+      BtnRead.innerText = "讀取雲端";
     };
-
-    script.onerror = () => { alert("讀取發生錯誤"); BtnRead.innerText = "讀取同步進度"; };
     script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
     d.body.appendChild(script);
+  }
+
+  window.onload = () => {
+    // 1. 先載入本地緩存(避免白屏)
+    const saved = localStorage.getItem("tv_l");
+    if (saved) { L.value = saved; gen(); }
+    const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
+    if (u) load(u, t);
+    
+    // 2. 核心：啟動時立即自動與雲端同步
+    fetchCloudData(true); 
   };
 
-  // 寫入進度
-  BtnWrite.onclick = () => {
-    BtnWrite.innerText = "寫入中...";
+  BtnRead.onclick = () => fetchCloudData(false);
+
+  function uploadData(isSilent = false) {
+    if (!isSilent) BtnWrite.innerText = "寫入中...";
     const payload = {
       list: L.value,
       url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
-      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0)
+      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0),
+      auto: isAuto
     };
+    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+    .then(() => { if (!isSilent) { showNotice("💾 寫入成功"); BtnWrite.innerText = "寫入雲端"; } });
+  }
 
-    fetch(API_URL, {
-      method: "POST",
-      mode: "no-cors",
-      body: JSON.stringify(payload)
-    }).then(() => {
-      showNotice("💾 寫入成功");
-      BtnWrite.innerText = "寫入同步進度";
-    }).catch(() => {
-      alert("寫入失敗");
-      BtnWrite.innerText = "寫入同步進度";
-    });
-  };
+  BtnWrite.onclick = () => uploadData(false);
+
+  // 定時背景儲存
+  setInterval(() => {
+    if (isAuto && dp && !dp.video.paused && dp.video.currentTime > 0) {
+      uploadData(true);
+    }
+  }, 60000);
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
 
@@ -141,38 +150,19 @@
         if (t > 0) dp.seek(t);
         dp.play();
     } else {
-        dp = new DPlayer({
-            container: d.getElementById('dplayer'),
-            autoplay: true,
-            hotkey: true,
-            video: { url: u, type: 'hls' }
-        });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
+        dp = new DPlayer({ container: d.getElementById('dplayer'), autoplay: true, hotkey: true, video: { url: u, type: 'hls' } });
+        dp.video.dataset.u = u; if (t > 0) dp.seek(t);
         dp.on('ended', () => nextVideo());
-        
-        const btnBox = d.createElement('div');
-        btnBox.style.cssText = 'display:flex; align-items:center;';
-        const curEp = d.createElement('div');
-        curEp.id = "curEp";
-        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
-
+        const btnBox = d.createElement('div'); btnBox.style.cssText = 'display:flex; align-items:center;';
+        const curEp = d.createElement('div'); curEp.id = "curEp"; curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
         const createQuickBtn = (text, action) => {
-            const btn = d.createElement('div');
-            btn.className = 'dplayer-icon';
-            btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center; cursor:pointer;';
+            const btn = d.createElement('div'); btn.className = 'dplayer-icon'; btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center; cursor:pointer;';
             btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
             btn.onclick = (e) => { e.stopPropagation(); action(); };
             return btn;
         };
-
-        btnBox.appendChild(curEp);
-        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-        
-        const ir = d.querySelector('.dplayer-icons-right');
-        if (ir) ir.insertBefore(btnBox, ir.firstChild);
+        btnBox.appendChild(curEp); btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); })); btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); })); btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+        const ir = d.querySelector('.dplayer-icons-right'); if (ir) ir.insertBefore(btnBox, ir.firstChild);
         updateEpDisp(u); 
     }
   }
