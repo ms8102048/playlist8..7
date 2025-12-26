@@ -168,6 +168,7 @@
 
         btnBox.appendChild(curEp);
         btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+        btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
         btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
         btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
         
