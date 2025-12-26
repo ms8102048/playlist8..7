@@ -76,7 +76,7 @@
                 alert("讀取失敗，請確認網路或 API 部署。"); 
             }
         } else {
-            S.innerText = "上傳中...haha";
+            S.innerText = "上傳中...";
             const payload = {
                 list: L.value,
                 url: dp ? dp.video.dataset.u : "",
@@ -94,10 +94,10 @@
                 console.log("POST Catch (通常仍成功):", err);
                 alert("已嘗試上傳進度。");
             }).finally(() => {
-                S.innerText = "雲端同步進度";
+                S.innerText = "雲端同步進度1";
             });
         }
-        S.innerText = "雲端同步進度";
+        S.innerText = "雲端同步進度1";
     };
 
     T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
