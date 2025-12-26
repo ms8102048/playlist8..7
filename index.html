@@ -1,196 +1,40 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 播放器</title>
-  <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
-  <style>
-    body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
-    #UI { transition: all 0.3s; }
-    textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
-    #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-    .btn-group { display: flex; gap: 10px; margin-bottom: 10px; }
-    button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; }
-    .btn-ctrl { flex-grow: 1; height: 40px; background: #444; color: #fff; }
-    #Sync { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
-    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    .dplayer-icons-right { display: flex !important; align-items: center; }
-  </style>
+    <title>讀取測試</title>
 </head>
 <body>
+    <h2>Google 試算表讀取測試</h2>
+    <button onclick="testRead()">點我讀取雲端資料</button>
+    <div id="output" style="margin-top:20px; border:1px solid #ccc; padding:10px;">
+        等待讀取...
+    </div>
 
-<div id="UI">
-  <textarea id="L" placeholder="在此貼入清單 (格式: 名稱$網址)"></textarea>
-  <div id="C"></div>
-</div>
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbwDWdmTharCjjY6-k7-p8ZbOfUSfgJzVY5ozoGIU_8b-Pz9MuXIfLvFT98Rg65AzuwUlw/exec";
 
-<div class="btn-group">
-  <button id="T" class="btn-ctrl">收合/展開清單</button>
-  <button id="Sync" class="btn-ctrl">雲端同步進度</button>
-</div>
+        function testRead() {
+            document.getElementById('output').innerText = "讀取中，請稍候...";
+            
+            // 創建 JSONP 請求
+            const script = document.createElement('script');
+            const cbName = 'myCallback';
+            
+            // 定義收到資料後的處理動作
+            window[cbName] = function(data) {
+                document.getElementById('output').innerHTML = `
+                    <b>讀取成功！</b><br>
+                    清單內容：${data.list} <br>
+                    URL：${data.url} <br>
+                    時間：${data.time}
+                `;
+                delete window[cbName];
+                document.body.removeChild(script);
+            };
 
-<div id="dplayer"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
-<script>
-  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), S = d.getElementById("Sync");
-  let dp = null;
-
-  // 使用你提供的新版本網址
-  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2u0uFIZKYVu53Q5aSutz57vbrUuZhZGfPeWOUZ4u93ZU-f7ICdqxpVnsf61AarEQnsg/exec";
-
-  window.onload = () => {
-    const saved = localStorage.getItem("tv_l");
-    if (saved) { L.value = saved; gen(); }
-    const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
-    if (u) load(u, t);
-  };
-
-  // 核心同步邏輯
-  S.onclick = () => {
-    const choice = confirm("同步雲端進度：\n【確定】從雲端讀取 (覆蓋本地)\n【取消】將目前進度同步至雲端");
-    
-    if (choice) {
-      // --- 讀取 (JSONP 模式) ---
-      S.innerText = "讀取中...";
-      const cbName = 'jsonp_' + Date.now();
-      const script = d.createElement('script');
-      
-      window[cbName] = (data) => {
-        if (data && data.list) {
-          L.value = data.list;
-          localStorage.setItem("tv_l", data.list);
-          gen();
-          if (data.url) load(data.url, data.time || 0);
-          alert("雲端同步成功！");
-        } else {
-          alert("雲端目前沒有資料。");
+            script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
+            document.body.appendChild(script);
         }
-        delete window[cbName];
-        d.body.removeChild(script);
-        S.innerText = "雲端同步進度";
-      };
-
-      script.src = `${GOOGLE_SCRIPT_URL}?callback=${cbName}&t=${Date.now()}`;
-      d.body.appendChild(script);
-
-    } else {
-      // --- 上傳 ---
-      S.innerText = "上傳中...";
-      const payload = {
-        list: L.value,
-        url: dp ? dp.video.dataset.u : "",
-        time: dp ? dp.video.currentTime : 0
-      };
-
-      fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: JSON.stringify(payload)
-      }).then(() => {
-        alert("目前進度已存至雲端！");
-        S.innerText = "雲端同步進度";
-      }).catch(() => {
-        alert("已嘗試上傳");
-        S.innerText = "雲端同步進度";
-      });
-    }
-  };
-
-  T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
-
-  function gen() {
-    const lines = L.value.split('\n').filter(l => l.includes('http'));
-    C.innerHTML = '';
-    lines.forEach((l, i) => {
-      const u = l.split('$').pop().trim();
-      const b = d.createElement("button");
-      b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => load(u, 0);
-      C.appendChild(b);
-    });
-    if (dp) hi(dp.video.dataset.u);
-  }
-
-  function load(u, t) {
-    hi(u);
-    if (dp) {
-        dp.switchVideo({ url: u, type: 'hls' });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.play();
-    } else {
-        dp = new DPlayer({
-            container: d.getElementById('dplayer'),
-            autoplay: true,
-            hotkey: true,
-            video: { url: u, type: 'hls' }
-        });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.on('ended', () => nextVideo());
-        
-        const btnBox = d.createElement('div');
-        btnBox.style.cssText = 'display:flex; align-items:center;';
-        const curEp = d.createElement('div');
-        curEp.id = "curEp";
-        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
-
-        const createQuickBtn = (text, action) => {
-            const btn = d.createElement('div');
-            btn.className = 'dplayer-icon';
-            btn.style.cssText = 'width:auto; padding:0 3px; display:flex; align-items:center; cursor:pointer;';
-            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-            btn.onclick = (e) => { e.stopPropagation(); action(); };
-            return btn;
-        };
-
-        btnBox.appendChild(curEp);
-        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-        
-        const ir = d.querySelector('.dplayer-icons-right');
-        if (ir) ir.insertBefore(btnBox, ir.firstChild);
-        updateEpDisp(u); 
-    }
-  }
-
-  function nextVideo() {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
-    const i = bs.findIndex(b => b.dataset.u === u);
-    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
-  }
-
-  function updateEpDisp(u) {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const i = bs.findIndex(b => b.dataset.u === u);
-    const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
-  }
-
-  function hi(u) {
-    updateEpDisp(u);
-    d.querySelectorAll(".btn-num").forEach(b => {
-      const a = b.dataset.u === u;
-      b.style.background = a ? "#0f0" : "#222";
-      b.style.color = a ? "#000" : "#fff";
-    });
-  }
-
-  L.oninput = () => { localStorage.setItem("tv_l", L.value); gen(); };
-
-  setInterval(() => {
-    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
-      localStorage.setItem("tv_u", dp.video.dataset.u);
-      localStorage.setItem("tv_last_time", dp.video.currentTime);
-    }
-  }, 3000);
-</script>
+    </script>
 </body>
 </html>
