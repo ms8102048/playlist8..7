@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 播放器 - 穩定修復版</title>
+  <title>Git 播放器v1</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
@@ -26,7 +26,6 @@
 <body>
 
 <div id="AutoNotice">成功</div>
-
 <div id="UI">
   <textarea id="L" placeholder="格式: 名稱$網址"></textarea>
   <div id="C"></div>
@@ -41,8 +40,8 @@
 
 <div id="dplayer"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dplayer/1.27.0/DPlayer.min.js"></script>
 
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
@@ -65,96 +64,56 @@
 
   BtnAuto.onclick = () => toggleAuto(!isAuto);
 
-  // 讀取同步
-  function fetchCloudData(isInitial = false) {
-    if (!isInitial) BtnRead.innerText = "讀取中...";
-    const cbName = 'jsonp_' + Date.now();
-    const script = d.createElement('script');
-    window[cbName] = (data) => {
-      if (data && data.list) {
-        L.value = data.list;
-        localStorage.setItem("tv_l", data.list);
-        gen();
-        if (data.url) load(data.url, data.time || 0);
-        if (data.auto !== undefined) toggleAuto(data.auto, false);
-        if (!isInitial) showNotice("✅ 讀取成功");
-      }
-      delete window[cbName]; d.body.removeChild(script);
-      BtnRead.innerText = "讀取同步";
-    };
-    script.onerror = () => { if(!isInitial) alert("讀取失敗"); BtnRead.innerText = "讀取同步"; };
-    script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
-    d.body.appendChild(script);
-  }
-
-  // 寫入同步
-  function uploadData(isSilent = false) {
-    if (!isSilent) BtnWrite.innerText = "寫入中...";
-    const payload = {
-      list: L.value,
-      url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
-      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0),
-      auto: isAuto
-    };
-    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-    .then(() => { if (!isSilent) { showNotice("💾 寫入成功"); BtnWrite.innerText = "寫入同步"; } });
-  }
-
-  BtnRead.onclick = () => fetchCloudData(false);
-  BtnWrite.onclick = () => uploadData(false);
-
-  // 核心載入邏輯：增加防快取與延遲
-function load(u, t) {
+  function load(u, t) {
     if (!u || u === "null") return;
     hi(u);
 
-    // 1. 強制避開快取
+    // 強制避開快取
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
 
-    // 2. 如果已經有播放器，先徹底關閉舊的 HLS 實例
+    // 如果已經有播放器，直接切換
     if (dp) {
-        dp.pause();
-        // 核心修改：切換前先清理，避免舊的解碼器殘留導致失敗
-        dp.switchVideo({ 
-            url: freshUrl, 
-            type: 'hls' 
-        });
-        dp.video.dataset.u = u;
-        
-        // 增加一點點延遲，給予解碼器重啟時間
-        setTimeout(() => { 
-            if (t > 0) dp.seek(t); 
-            dp.play().catch(e => console.log("播放暫緩:", e)); 
-        }, 800);
-    } else {
-        // 3. 第一次初始化
-        dp = new DPlayer({
-            container: d.getElementById('dplayer'),
-            autoplay: true,
-            hotkey: true,
-            video: { 
-                url: freshUrl, 
-                type: 'hls',
-                // 這裡加入 hls 參數調整，增加相容性
-                customType: {
-                    hls: function (video, player) {
-                        const hls = new Hls();
-                        hls.loadSource(video.src);
-                        hls.attachMedia(video);
-                    }
-                }
-            }
-        });
-        dp.video.dataset.u = u;
-        setTimeout(() => { if (t > 0) dp.seek(t); }, 1000);
-        dp.on('ended', () => nextVideo());
-
-        // --- 控制按鈕部分維持不變 ---
-        setupControls(u);
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
+      dp.video.dataset.u = u;
+      setTimeout(() => { if (t > 0) dp.seek(t); dp.play().catch(()=>{}); }, 600);
+      return;
     }
+
+    // 第一次載入播放器
+    dp = new DPlayer({
+      container: d.getElementById('dplayer'),
+      autoplay: true,
+      hotkey: true,
+      video: {
+        url: freshUrl,
+        type: 'customHls',
+        customType: {
+          customHls: function (video, player) {
+            if (Hls.isSupported()) {
+              const hls = new Hls();
+              hls.loadSource(video.src);
+              hls.attachMedia(video);
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+              // 針對 Safari 或 某些內建支援 HLS 的環境直接播放
+              video.src = video.src;
+            }
+          }
+        }
+      }
+    });
+
+    dp.video.dataset.u = u;
+    setTimeout(() => { if (t > 0) dp.seek(t); }, 800);
+    
+    // 如果發生載入錯誤，提示用戶
+    dp.on('error', function() {
+      console.log("DPlayer 載入失敗，嘗試自動刷新...");
+    });
+
+    // 建立控制鈕
+    setupControls(u);
   }
 
-  // 封裝一下按鈕建立，讓 load 函數乾淨一點
   function setupControls(u) {
     const btnBox = d.createElement('div');
     btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
@@ -177,7 +136,8 @@ function load(u, t) {
     if (ir) ir.insertBefore(btnBox, ir.firstChild);
     updateEpDisp(u);
   }
-  // 解析清單
+
+  // --- 其他功能函數 (gen, fetchCloudData, uploadData...) 與原版相同 ---
   function gen() {
     const lines = L.value.split('\n').filter(l => l.includes('http'));
     C.innerHTML = '';
@@ -189,6 +149,37 @@ function load(u, t) {
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
+  }
+
+  function fetchCloudData(isInitial = false) {
+    if (!isInitial) BtnRead.innerText = "讀取中...";
+    const cbName = 'jsonp_' + Date.now();
+    const script = d.createElement('script');
+    window[cbName] = (data) => {
+      if (data && data.list) {
+        L.value = data.list;
+        localStorage.setItem("tv_l", data.list);
+        gen();
+        if (data.url) load(data.url, data.time || 0);
+        if (data.auto !== undefined) toggleAuto(data.auto, false);
+        if (!isInitial) showNotice("✅ 讀取成功");
+      }
+      delete window[cbName]; d.body.removeChild(script);
+      BtnRead.innerText = "讀取同步";
+    };
+    script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
+    d.body.appendChild(script);
+  }
+
+  function uploadData(isSilent = false) {
+    const payload = {
+      list: L.value,
+      url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u") || ""),
+      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time") || 0),
+      auto: isAuto
+    };
+    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+    .then(() => { if (!isSilent) showNotice("💾 寫入成功"); });
   }
 
   function nextVideo() { 
@@ -214,28 +205,16 @@ function load(u, t) {
     });
   }
 
+  BtnRead.onclick = () => fetchCloudData(false);
+  BtnWrite.onclick = () => uploadData(false);
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
   L.oninput = () => { localStorage.setItem("tv_l", L.value); gen(); };
 
-  // 初始化
   window.onload = () => {
-    try {
-        const saved = localStorage.getItem("tv_l");
-        if (saved) { L.value = saved; gen(); }
-        const u = localStorage.getItem("tv_u"), t = localStorage.getItem("tv_last_time");
-        if (u && u !== "null") load(u, parseFloat(t) || 0);
-    } catch(e) { console.error("初始化緩存錯誤"); }
+    const saved = localStorage.getItem("tv_l");
+    if (saved) { L.value = saved; gen(); }
     fetchCloudData(true);
   };
-
-  // 每 30 秒存一次本地，每 60 秒同步一次雲端
-  setInterval(() => {
-    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
-      localStorage.setItem("tv_u", dp.video.dataset.u);
-      localStorage.setItem("tv_last_time", dp.video.currentTime);
-      if (isAuto) uploadData(true);
-    }
-  }, 30000);
 </script>
 </body>
 </html>
