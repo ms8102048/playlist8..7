@@ -135,10 +135,14 @@ function setupControls(u) {
     btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
     btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
     
-    // --- 這裡修改跳過片頭的秒數，我先幫你改成 90 秒 ---
+    // 跳過片頭按鈕修正版
     btnBox.appendChild(createQuickBtn('↩️', () => { 
-        dp.seek(90); 
-        showNotice("已跳至片頭 (90秒)"); 
+        // 1. 使用原生 video 標籤跳轉，這樣 DPlayer 就不會顯示「快進 nn 秒」
+        if (dp && dp.video) {
+            dp.video.currentTime = 85; 
+            // 2. 顯示我們自訂的正確訊息
+            showNotice("已跳過片頭 (85秒)"); 
+        }
     }));
     
     btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
