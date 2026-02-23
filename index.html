@@ -125,54 +125,71 @@
     if (dp) hi(dp.video.dataset.u);
   }
 
-  function load(u, t) {
+function load(u, t) {
     hi(u);
+    // 定義播放器的配置
+    const playerConfig = {
+      container: d.getElementById('dplayer'),
+      autoplay: true,
+      hotkey: true,
+      video: {
+        url: u,
+        type: 'hls' // 強制指定使用 hls.js
+      }
+    };
+
     if (dp) {
-        dp.switchVideo({ url: u, type: 'hls' });
-        dp.video.dataset.u = u;
+      // 這裡先暫停並銷毀當前載入狀態，再切換網址
+      dp.pause();
+      dp.switchVideo(playerConfig.video);
+      dp.video.dataset.u = u;
+      
+      // 延遲一點點再執行 seek，避免解碼器還沒跟上
+      setTimeout(() => {
         if (t > 0) dp.seek(t);
-        dp.play();
+        dp.play().catch(() => { console.log("等待手動觸發播放"); });
+      }, 500);
     } else {
-        dp = new DPlayer({
-            container: d.getElementById('dplayer'),
-            autoplay: true,
-            hotkey: true,
-            video: { url: u, type: 'hls' }
-        });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.on('ended', () => nextVideo());
-        
-        const btnBox = d.createElement('div');
-        // 核心修改：將 gap 設定為 12px 增加按鈕間距
-        btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-        
-        const curEp = d.createElement('div');
-        curEp.id = "curEp";
-        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+      dp = new DPlayer(playerConfig);
+      dp.video.dataset.u = u;
+      
+      // 初次建立播放器時，監聽 'canplay' 事件後再跳轉秒數
+      dp.on('canplay', () => {
+        if (t > 0) {
+          dp.seek(t);
+          t = 0; // 確保只跳轉一次
+        }
+      });
 
-        const createQuickBtn = (text, action) => {
-            const btn = d.createElement('div');
-            btn.className = 'dplayer-icon';
-            // 核心修改：增加 padding 讓點擊範圍變大，手指更好按
-            btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-            btn.onclick = (e) => { e.stopPropagation(); action(); };
-            return btn;
-        };
+      dp.on('ended', () => nextVideo());
+      dp.on('error', () => {
+        console.error("DPlayer 報錯，嘗試重新緩衝...");
+      });
 
-        btnBox.appendChild(curEp);
-        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-        btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-        
-        const ir = d.querySelector('.dplayer-icons-right');
-        if (ir) ir.insertBefore(btnBox, ir.firstChild);
-        updateEpDisp(u); 
+      // --- 你的自訂控制按鈕 (快進/快退/↩️/⏭️) ---
+      const btnBox = d.createElement('div');
+      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+      const curEp = d.createElement('div');
+      curEp.id = "curEp";
+      curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+      const createQuickBtn = (text, action) => {
+        const btn = d.createElement('div');
+        btn.className = 'dplayer-icon';
+        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); action(); };
+        return btn;
+      };
+      btnBox.appendChild(curEp);
+      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+      const ir = d.querySelector('.dplayer-icons-right');
+      if (ir) ir.insertBefore(btnBox, ir.firstChild);
+      updateEpDisp(u);
     }
   }
-
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const u = dp ? dp.video.dataset.u : "";
