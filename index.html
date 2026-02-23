@@ -3,46 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>穩定原生全螢幕版</title>
+  <title>Git終極穩定版</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dplayer/1.27.0/DPlayer.min.css">
   <style>
-    body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; }
+    body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { margin-bottom: 10px; }
-    textarea { width: 100%; height: 60px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px; }
+    textarea { width: 100%; height: 60px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; }
+    .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+    #dplayer { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     
-    /* 核心容器：全螢幕會放大這整個框 */
-    .player-container { 
-      position: relative; 
-      width: 100%; 
-      background: #000; 
-      aspect-ratio: 16/9; 
-      display: flex;
-      flex-direction: column;
-    }
+    /* 讓 DPlayer 右側控制列可以塞下更多按鈕 */
+    .dplayer-icons-right { display: flex !important; align-items: center; }
+    .custom-icon { cursor: pointer; padding: 0 8px; display: flex; align-items: center; }
+    #curEp { font-size: 15px; color: #0f0; border: 1px solid #080; padding: 1px 8px; border-radius: 4px; font-weight: bold; margin-right: 5px; white-space: nowrap; }
     
-    video { width: 100%; flex-grow: 1; background: #000; cursor: pointer; }
-
-    /* 自定義控制條：浮動在影片下方 */
-    .custom-bar {
-      display: flex;
-      align-items: center;
-      padding: 10px 15px;
-      gap: 15px;
-      background: rgba(20, 20, 20, 0.9);
-      border-top: 1px solid #333;
-    }
-
-    .ctrl-icon { cursor: pointer; font-size: 26px; user-select: none; }
-    #curEp { font-size: 16px; color: #0f0; border: 1.5px solid #080; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
-    
-    /* 隱藏原生控制列，因為我們要用自己的 */
-    video::-webkit-media-controls { display:none !important; }
-    
-    #AutoNotice { 
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: rgba(0, 128, 0, 0.9); padding: 8px 20px; border-radius: 20px; z-index: 10000; display: none;
-    }
+    #AutoNotice { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 128, 0, 0.9); padding: 8px 20px; border-radius: 20px; z-index: 10001; display: none; }
   </style>
 </head>
 <body>
@@ -53,32 +29,20 @@
   <textarea id="L" placeholder="格式: 名稱$網址"></textarea>
   <div id="C"></div>
   <div style="margin: 10px 0;">
-    <button onclick="fetchCloudData()">讀取同步</button>
-    <button onclick="uploadData()">寫入同步</button>
+    <button onclick="fetchCloudData()" style="padding: 8px 15px;">讀取同步</button>
+    <button onclick="uploadData()" style="padding: 8px 15px;">寫入同步</button>
   </div>
 </div>
 
-<div class="player-container" id="mainPlayer">
-  <video id="v" playsinline autoplay onclick="togglePlay()"></video>
-  
-  <div class="custom-bar">
-    <div id="curEp">第 - 集</div>
-    <div class="ctrl-icon" onclick="v.currentTime -= 10">⏪</div>
-    <div class="ctrl-icon" onclick="v.currentTime += 10">⏩</div>
-    <div class="ctrl-icon" onclick="v.currentTime = 85; showNotice('已跳過片頭')">↩️</div>
-    <div class="ctrl-icon" onclick="nextVideo()">⏭️</div>
-    
-    <div style="flex-grow: 1;"></div>
-    
-    <div class="ctrl-icon" onclick="toggleFullScreen()" style="font-size: 20px;">〔 〕</div>
-  </div>
-</div>
+<div id="dplayer"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dplayer/1.27.0/DPlayer.min.js"></script>
+
 <script>
-  const d = document, v = d.getElementById("v"), L = d.getElementById("L"), C = d.getElementById("C"), 
-        MP = d.getElementById("mainPlayer"), curEpDisp = d.getElementById("curEp"), NT = d.getElementById("AutoNotice");
-  let hls = null;
+  const d = document, L = d.getElementById("L"), C = d.getElementById("C"), NT = d.getElementById("AutoNotice");
+  let dp = null;
+  const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
 
   function showNotice(msg) {
     NT.innerText = msg; NT.style.display = 'block';
@@ -86,34 +50,64 @@
   }
 
   function load(u, t) {
-    if (!u) return;
-    const freshUrl = u.includes('?') ? u + "&v=" + Date.now() : u + "?v=" + Date.now();
-    if (hls) hls.destroy();
-    if (Hls.isSupported()) {
-      hls = new Hls(); hls.loadSource(freshUrl); hls.attachMedia(v);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { if(t>0) v.currentTime = t; v.play(); });
-    } else { v.src = freshUrl; }
-    v.dataset.u = u;
-    updateStatus(u);
+    if (!u || u === "null") return;
+    
+    // 強制避開快取關鍵：時間戳
+    const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
+
+    if (dp) {
+      // 核心修復：不只是 switch，而是先暫停並強刷資料
+      dp.pause();
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
+      dp.video.dataset.u = u;
+      setTimeout(() => { if (t > 0) dp.seek(t); dp.play().catch(()=>{}); }, 600);
+    } else {
+      // 第一次初始化
+      dp = new DPlayer({
+        container: d.getElementById('dplayer'),
+        autoplay: true,
+        video: { 
+            url: freshUrl, 
+            type: 'customHls',
+            customType: {
+                customHls: function (video, player) {
+                    const hls = new Hls();
+                    hls.loadSource(video.src);
+                    hls.attachMedia(video);
+                }
+            }
+        }
+      });
+      dp.video.dataset.u = u;
+      
+      // 注入自訂按鈕到 DPlayer 右下角（跟齒輪同一列）
+      injectButtons();
+      
+      setTimeout(() => { if (t > 0) dp.seek(t); }, 800);
+      dp.on('ended', () => nextVideo());
+    }
+    updateUI(u);
   }
 
-  function togglePlay() { if (v.paused) v.play(); else v.pause(); }
+  function injectButtons() {
+    const rightIcons = d.querySelector('.dplayer-icons-right');
+    if (!rightIcons) return;
 
-  // 關鍵功能：讓「整個容器」進入全螢幕，這樣按鈕才不會不見
-  function toggleFullScreen() {
-    if (!d.fullscreenElement) {
-      MP.requestFullscreen().catch(err => {
-        // 針對 iPhone 的特殊處理
-        v.webkitEnterFullscreen();
-      });
-    } else {
-      d.exitFullscreen();
-    }
+    const wrap = d.createElement('div');
+    wrap.style.cssText = "display:flex; align-items:center; margin-right:10px;";
+    wrap.innerHTML = `
+      <div id="curEp">第 - 集</div>
+      <div class="custom-icon" onclick="dp.seek(dp.video.currentTime - 10)" title="後退10秒" style="font-size:24px;">⏪</div>
+      <div class="custom-icon" onclick="dp.seek(dp.video.currentTime + 10)" title="前進10秒" style="font-size:24px;">⏩</div>
+      <div class="custom-icon" onclick="dp.video.currentTime = 85; showNotice('已跳過片頭')" title="跳過片頭" style="font-size:24px;">↩️</div>
+      <div class="custom-icon" onclick="nextVideo()" title="下一集" style="font-size:24px;">⏭️</div>
+    `;
+    rightIcons.insertBefore(wrap, rightIcons.firstChild);
   }
 
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const i = bs.findIndex(b => b.dataset.u === v.dataset.u);
+    const i = bs.findIndex(b => b.dataset.u === dp.video.dataset.u);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   }
 
@@ -127,35 +121,39 @@
       b.onclick = () => load(u, 0);
       C.appendChild(b);
     });
+    if (dp) updateUI(dp.video.dataset.u);
   }
 
-  function updateStatus(u) {
+  function updateUI(u) {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === u);
-    curEpDisp.innerText = i !== -1 ? "第 " + (i + 1) + " 集" : "播放中";
+    const epEl = d.getElementById("curEp");
+    if (epEl) epEl.innerText = i !== -1 ? `第 ${i + 1} 集` : "播放中";
+    d.querySelectorAll(".btn-num").forEach(b => {
+      b.style.background = b.dataset.u === u ? "#0f0" : "#222";
+      b.style.color = b.dataset.u === u ? "#000" : "#fff";
+    });
   }
 
-  // 同步功能 (維持你的 API 串接)
-  const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
+  // 同步邏輯維持不變
   function fetchCloudData() {
     const cbName = 'jsonp_' + Date.now();
     const script = d.createElement('script');
     window[cbName] = (data) => {
-      if (data && data.list) { L.value = data.list; gen(); if (data.url) load(data.url, data.time); showNotice("同步成功"); }
+      if (data && data.list) { L.value = data.list; gen(); if (data.url) load(data.url, data.time); }
       delete window[cbName]; d.body.removeChild(script);
     };
-    script.src = API_URL + "?callback=" + cbName;
+    script.src = API_URL + "?callback=" + cbName + "&t=" + Date.now();
     d.body.appendChild(script);
   }
 
   function uploadData() {
-    const payload = { list: L.value, url: v.dataset.u || "", time: v.currentTime || 0 };
+    const payload = { list: L.value, url: dp ? dp.video.dataset.u : "", time: dp ? dp.video.currentTime : 0 };
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) }).then(() => showNotice("已存檔"));
   }
 
   L.oninput = () => { localStorage.setItem("tv_l", L.value); gen(); };
-  v.onended = () => nextVideo();
-
+  
   window.onload = () => {
     const saved = localStorage.getItem("tv_l");
     if (saved) { L.value = saved; gen(); }
@@ -163,9 +161,9 @@
   };
 
   setInterval(() => {
-    if (v.currentTime > 0 && !v.paused) {
-      localStorage.setItem("tv_u", v.dataset.u);
-      localStorage.setItem("tv_last_time", v.currentTime);
+    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
+      localStorage.setItem("tv_u", dp.video.dataset.u);
+      localStorage.setItem("tv_last_time", dp.video.currentTime);
     }
   }, 10000);
 </script>
