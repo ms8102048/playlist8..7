@@ -104,52 +104,79 @@
   BtnWrite.onclick = () => uploadData(false);
 
   // 核心載入邏輯：增加防快取與延遲
-  function load(u, t) {
+function load(u, t) {
     if (!u || u === "null") return;
     hi(u);
 
-    // [核心修復]：在網址後加上時間戳，解決正常模式下的快取錯誤問題
+    // 1. 強制避開快取
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
 
+    // 2. 如果已經有播放器，先徹底關閉舊的 HLS 實例
     if (dp) {
-        dp.switchVideo({ url: freshUrl, type: 'hls' });
-        dp.video.dataset.u = u; // 存原始網址供辨識
-        setTimeout(() => { if (t > 0) dp.seek(t); dp.play().catch(()=>{}); }, 600);
+        dp.pause();
+        // 核心修改：切換前先清理，避免舊的解碼器殘留導致失敗
+        dp.switchVideo({ 
+            url: freshUrl, 
+            type: 'hls' 
+        });
+        dp.video.dataset.u = u;
+        
+        // 增加一點點延遲，給予解碼器重啟時間
+        setTimeout(() => { 
+            if (t > 0) dp.seek(t); 
+            dp.play().catch(e => console.log("播放暫緩:", e)); 
+        }, 800);
     } else {
+        // 3. 第一次初始化
         dp = new DPlayer({
             container: d.getElementById('dplayer'),
             autoplay: true,
             hotkey: true,
-            video: { url: freshUrl, type: 'hls' }
+            video: { 
+                url: freshUrl, 
+                type: 'hls',
+                // 這裡加入 hls 參數調整，增加相容性
+                customType: {
+                    hls: function (video, player) {
+                        const hls = new Hls();
+                        hls.loadSource(video.src);
+                        hls.attachMedia(video);
+                    }
+                }
+            }
         });
         dp.video.dataset.u = u;
-        setTimeout(() => { if (t > 0) dp.seek(t); }, 800);
+        setTimeout(() => { if (t > 0) dp.seek(t); }, 1000);
         dp.on('ended', () => nextVideo());
 
-        // 建立控制鈕
-        const btnBox = d.createElement('div');
-        btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-        const curEp = d.createElement('div');
-        curEp.id = "curEp";
-        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
-        const createQuickBtn = (text, action) => {
-            const btn = d.createElement('div');
-            btn.className = 'dplayer-icon';
-            btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-            btn.onclick = (e) => { e.stopPropagation(); action(); };
-            return btn;
-        };
-        btnBox.appendChild(curEp);
-        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-        const ir = d.querySelector('.dplayer-icons-right');
-        if (ir) ir.insertBefore(btnBox, ir.firstChild);
-        updateEpDisp(u); 
+        // --- 控制按鈕部分維持不變 ---
+        setupControls(u);
     }
   }
 
+  // 封裝一下按鈕建立，讓 load 函數乾淨一點
+  function setupControls(u) {
+    const btnBox = d.createElement('div');
+    btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+    const curEp = d.createElement('div');
+    curEp.id = "curEp";
+    curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+    const createQuickBtn = (text, action) => {
+        const btn = d.createElement('div');
+        btn.className = 'dplayer-icon';
+        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); action(); };
+        return btn;
+    };
+    btnBox.appendChild(curEp);
+    btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+    btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+    btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+    const ir = d.querySelector('.dplayer-icons-right');
+    if (ir) ir.insertBefore(btnBox, ir.firstChild);
+    updateEpDisp(u);
+  }
   // 解析清單
   function gen() {
     const lines = L.value.split('\n').filter(l => l.includes('http'));
