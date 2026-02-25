@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 全能播放器 (三槽清單同步修正版)</title>
+  <title>Git 全能播放器 (三槽修復版)</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -55,7 +55,6 @@
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
   
-  // 初始化核心資料
   let appState = {
     activeSlot: 1,
     slots: {
@@ -72,7 +71,6 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 1. 同步當前狀態到 appState 物件與本地緩存
   function syncToLocal() {
     const cur = appState.activeSlot;
     appState.slots[cur].list = L.value;
@@ -80,25 +78,27 @@
       appState.slots[cur].url = dp.video.dataset.u;
       appState.slots[cur].time = dp.video.currentTime;
     }
-    localStorage.setItem("git_player_v3", JSON.stringify(appState));
+    localStorage.setItem("git_player_final", JSON.stringify(appState));
   }
 
-  // 2. 切換槽位核心邏輯
-  function changeSlot(s, isFirstLoad = false) {
-    if (!isFirstLoad) syncToLocal(); // 切換前保存舊槽位修改
-    
+  function changeSlot(s, isForceLoad = true) {
+    // 移除阻擋切換的 if 判斷
+    syncToLocal(); 
     appState.activeSlot = s;
+    
+    // 更新按鈕外觀
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
-    d.getElementById('S'+s).classList.add('active');
+    const targetBtn = d.getElementById('S'+s);
+    if(targetBtn) targetBtn.classList.add('active');
     
-    // 關鍵：先更新清單文字內容
-    const targetData = appState.slots[s];
-    L.value = targetData.list || "";
-    gen(); // 根據清單產生按鈕
+    // 刷新清單與按鈕
+    const data = appState.slots[s];
+    L.value = data.list || "";
+    gen(); 
     
-    // 如果有記錄網址，載入影片
-    if (targetData.url) {
-      load(targetData.url, targetData.time || 0);
+    // 只有在需要載入影片時才執行 load
+    if (isForceLoad && data.url) {
+      load(data.url, data.time || 0);
     } else if (dp) {
       dp.pause();
     }
@@ -106,14 +106,12 @@
   }
 
   window.onload = () => {
-    const saved = localStorage.getItem("git_player_v3");
-    if (saved) { 
-      appState = JSON.parse(saved); 
-    }
+    const saved = localStorage.getItem("git_player_final");
+    if (saved) { appState = JSON.parse(saved); }
+    // 初始化，從上次的位置開始
     changeSlot(appState.activeSlot, true);
   };
 
-  // 3. 手動：讀取雲端 (包含三個槽位的清單與進度)
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
@@ -122,13 +120,12 @@
       if (data && data.list) {
         try {
           const remoteData = JSON.parse(data.list);
-          appState = remoteData; // 徹底覆蓋本地物件
-          localStorage.setItem("git_player_v3", data.list);
-          // 強制切換至記錄中的槽位並刷新 UI
+          appState = remoteData;
+          localStorage.setItem("git_player_final", data.list);
+          // 關鍵：讀取後強制重新啟動當前槽位的 UI 顯示
           changeSlot(appState.activeSlot, true);
-          showNotice("✅ 雲端同步成功：清單與位置已還原");
+          showNotice("✅ 雲端載入成功");
         } catch(e) {
-          // 容錯舊格式
           appState.slots[appState.activeSlot].list = data.list;
           appState.slots[appState.activeSlot].url = data.url || "";
           appState.slots[appState.activeSlot].time = data.time || 0;
@@ -143,7 +140,6 @@
     d.body.appendChild(script);
   };
 
-  // 4. 手動：寫入雲端 (打包所有資料)
   BtnWrite.onclick = () => {
     syncToLocal();
     BtnWrite.innerText = "寫入中...";
@@ -154,7 +150,7 @@
     };
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
       .then(() => {
-        showNotice("💾 雲端存檔成功：包含 3 個槽位");
+        showNotice("💾 雲端儲存成功");
         BtnWrite.innerText = "寫入同步進度";
       });
   };
@@ -182,4 +178,13 @@
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       dp.play();
-    } else
+    } else {
+      dp = new DPlayer({
+        container: d.getElementById('dplayer'),
+        autoplay: true, hotkey: true,
+        video: { url: freshUrl, type: 'hls' }
+      });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.on('ended', () => nextVideo());
+      const btnBox = d.createElement('
