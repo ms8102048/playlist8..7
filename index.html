@@ -3,25 +3,36 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 播放器 - 穩定修復版</title>
+  <title>Git 播放器 - 三槽獨立版</title>
+  <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { transition: all 0.3s; }
     textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+    
+    /* 槽位切換按鈕樣式 */
     .slot-group { display: flex; gap: 8px; margin-bottom: 10px; }
     .btn-slot { background: #222; color: #888; border: 1px solid #444; flex: 1; height: 35px; cursor: pointer; border-radius: 4px; font-weight: bold; }
     .btn-slot.active { background: #5a1a5a; color: #f0f; border: 1px solid #8a2a8a; }
+
     .btn-group { display: flex; gap: 8px; margin-bottom: 10px; }
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 13px; }
+    
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; flex: none; }
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
+    
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     .dplayer-icons-right { display: flex !important; align-items: center; }
-    #AutoNotice { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px; border-radius: 20px; z-index: 9999; display: none; font-weight: bold; }
+
+    #AutoNotice { 
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
+      border-radius: 20px; z-index: 9999; display: none; font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -29,13 +40,13 @@
 <div id="AutoNotice">成功</div>
 
 <div class="slot-group">
-  <button id="S1" class="btn-slot" onclick="changeSlot(1)">劇 1</button>
-  <button id="S2" class="btn-slot" onclick="changeSlot(2)">劇 2</button>
-  <button id="S3" class="btn-slot" onclick="changeSlot(3)">劇 3</button>
+  <button id="S1" class="btn-slot" onclick="switchSlot(1)">劇 1</button>
+  <button id="S2" class="btn-slot" onclick="switchSlot(2)">劇 2</button>
+  <button id="S3" class="btn-slot" onclick="switchSlot(3)">劇 3</button>
 </div>
 
 <div id="UI">
-  <textarea id="L" placeholder="貼入清單 (名稱$網址)"></textarea>
+  <textarea id="L" placeholder="在此貼入清單 (格式: 名稱$網址)"></textarea>
   <div id="C"></div>
 </div>
 
@@ -53,105 +64,199 @@
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
-  
-  // 1. 初始化強健的資料結構
-  let appState = {
-    activeSlot: 1,
-    slots: {
-      1: { list: "", url: "", time: 0 },
-      2: { list: "", url: "", time: 0 },
-      3: { list: "", url: "", time: 0 }
-    }
-  };
+
+  // 目前運行的槽位編號 (1, 2, or 3)
+  let curS = 1;
 
   const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
 
   function showNotice(msg) {
-    NT.innerText = msg; NT.style.display = 'block';
+    NT.innerText = msg;
+    NT.style.display = 'block';
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 2. 更新目前畫面的狀態到記憶體物件 (不觸發 API)
-  function updateMemory() {
-    const s = appState.activeSlot;
-    appState.slots[s].list = L.value;
-    if (dp) {
-      appState.slots[s].url = dp.video.dataset.u;
-      appState.slots[s].time = dp.video.currentTime;
-    }
-  }
+  // 切換環境的函數
+  function switchSlot(slotNum) {
+    // 1. 切換前，先停止當前影片防止背景播放
+    if (dp) dp.pause();
 
-  // 3. 切換槽位核心：先存、再換、後刷
-  function changeSlot(targetSlot, isFirstLoad = false) {
-    if (!isFirstLoad) updateMemory(); // 如果不是剛開網頁，先保存舊的
-    
-    appState.activeSlot = targetSlot;
-    
-    // UI 反饋
+    curS = slotNum;
+
+    // 2. 更新 UI 按鈕狀態
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
-    d.getElementById('S' + targetSlot).classList.add('active');
-    
-    // 渲染目標槽位的內容
-    const targetData = appState.slots[targetSlot];
-    L.value = targetData.list || "";
+    d.getElementById('S' + slotNum).classList.add('active');
+
+    // 3. 讀取該槽位專屬的 LocalStorage 並更新 UI
+    const savedL = localStorage.getItem("tv_l_s" + curS);
+    L.value = savedL || "";
     gen();
+
+    const savedU = localStorage.getItem("tv_u_s" + curS);
+    const savedT = localStorage.getItem("tv_last_time_s" + curS);
     
-    if (targetData.url) {
-      load(targetData.url, targetData.time || 0);
-    } else if (dp) {
-      dp.pause();
+    if (savedU) {
+      load(savedU, savedT || 0);
+    } else {
+      // 若該槽位無進度，清空顯示
+      if (dp) {
+        dp.switchVideo({ url: '', type: 'hls' });
+        const el = d.getElementById("curEp");
+        if (el) el.innerText = "";
+        d.querySelectorAll(".btn-num").forEach(b => { b.style.background = "#222"; b.style.color = "#fff"; });
+      }
     }
     
-    localStorage.setItem("final_app_state", JSON.stringify(appState));
-    showNotice(`已切換至 劇 ${targetSlot}`);
+    // 記錄最後一次停留在哪個槽位
+    localStorage.setItem("tv_active_slot", curS);
+    showNotice("已進入 劇 " + curS);
   }
 
-  // 4. 手動：寫入雲端 (打包三槽資料)
-  BtnWrite.onclick = () => {
-    updateMemory(); // 確保上傳的是最新的
-    BtnWrite.innerText = "寫入中...";
-    BtnWrite.disabled = true;
-    
-    const dataToSend = {
-      list: JSON.stringify(appState), // 整個物件 JSON 化
-      url: appState.slots[appState.activeSlot].url,
-      time: appState.slots[appState.activeSlot].time
-    };
-    
-    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(dataToSend) })
-      .then(() => {
-        showNotice("💾 雲端備份成功 (全槽位)");
-        BtnWrite.innerText = "寫入同步進度";
-        BtnWrite.disabled = false;
-      });
+  window.onload = () => {
+    // 啟動時讀取上次停留在哪個槽位，預設為 1
+    const lastSlot = localStorage.getItem("tv_active_slot") || 1;
+    switchSlot(parseInt(lastSlot));
   };
 
-  // 5. 手動：讀取雲端 (還原所有狀態)
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
-    BtnRead.disabled = true;
     const cbName = 'jsonp_' + Date.now();
     const script = d.createElement('script');
     
-    window[cbName] = (res) => {
-      if (res && res.list) {
-        try {
-          const parsed = JSON.parse(res.list);
-          appState = parsed; // 整個物件替換
-          localStorage.setItem("final_app_state", res.list);
-          // 根據雲端記錄的 activeSlot 自動切換
-          changeSlot(appState.activeSlot, true);
-          showNotice("✅ 雲端載入完成 (全槽位)");
-        } catch(e) {
-          // 容錯：如果是單一清單字串
-          appState.slots[appState.activeSlot].list = res.list;
-          changeSlot(appState.activeSlot, true);
-          showNotice("⚠️ 偵測到舊版清單");
-        }
+    // 注意：讀取時傳入目前槽位 curS，確保後端知道拿哪一筆進度
+    window[cbName] = (data) => {
+      if (data && data.list) {
+        L.value = data.list;
+        localStorage.setItem("tv_l_s" + curS, data.list);
+        gen();
+        if (data.url) load(data.url, data.time || 0);
+        showNotice("✅ 劇 " + curS + " 讀取成功");
       }
-      delete window[cbName]; d.body.removeChild(script);
+      delete window[cbName];
+      d.body.removeChild(script);
       BtnRead.innerText = "讀取同步進度";
-      BtnRead.disabled = false;
     };
-    script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
-    d.body.appendChild(
+    script.onerror = () => { alert("讀取發生錯誤"); BtnRead.innerText = "讀取同步進度"; };
+    
+    // 這裡我們維持原 API 網址，但加上 slot 參數供您後端識別（如果您後端有支援分槽）
+    script.src = `${API_URL}?callback=${cbName}&slot=${curS}&t=${Date.now()}`;
+    d.body.appendChild(script);
+  };
+
+  BtnWrite.onclick = () => {
+    BtnWrite.innerText = "寫入中...";
+    const payload = {
+      slot: curS, // 傳送目前是第幾個槽位
+      list: L.value,
+      url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u_s" + curS) || ""),
+      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_last_time_s" + curS) || 0)
+    };
+    fetch(API_URL, {
+      method: "POST",
+      mode: "no-cors",
+      body: JSON.stringify(payload)
+    }).then(() => {
+      showNotice("💾 劇 " + curS + " 寫入成功");
+      BtnWrite.innerText = "寫入同步進度";
+    }).catch(() => {
+      alert("寫入失敗");
+      BtnWrite.innerText = "寫入同步進度";
+    });
+  };
+
+  T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
+
+  function gen() {
+    const lines = L.value.split('\n').filter(l => l.includes('http'));
+    C.innerHTML = '';
+    lines.forEach((l, i) => {
+      const u = l.split('$').pop().trim();
+      const b = d.createElement("button");
+      b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
+      b.onclick = () => load(u, 0);
+      C.appendChild(b);
+    });
+    if (dp) hi(dp.video.dataset.u);
+  }
+
+  function load(u, t) {
+    hi(u);
+    if (dp) {
+        dp.switchVideo({ url: u, type: 'hls' });
+        dp.video.dataset.u = u;
+        if (t > 0) dp.seek(t);
+        dp.play();
+    } else {
+        dp = new DPlayer({
+            container: d.getElementById('dplayer'),
+            autoplay: true,
+            hotkey: true,
+            video: { url: u, type: 'hls' }
+        });
+        dp.video.dataset.u = u;
+        if (t > 0) dp.seek(t);
+        dp.on('ended', () => nextVideo());
+        
+        const btnBox = d.createElement('div');
+        btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+        
+        const curEp = d.createElement('div');
+        curEp.id = "curEp";
+        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+
+        const createQuickBtn = (text, action) => {
+            const btn = d.createElement('div');
+            btn.className = 'dplayer-icon';
+            btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+            btn.onclick = (e) => { e.stopPropagation(); action(); };
+            return btn;
+        };
+
+        btnBox.appendChild(curEp);
+        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+        btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+        
+        const ir = d.querySelector('.dplayer-icons-right');
+        if (ir) ir.insertBefore(btnBox, ir.firstChild);
+        updateEpDisp(u); 
+    }
+  }
+
+  function nextVideo() {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const u = dp ? dp.video.dataset.u : "";
+    const i = bs.findIndex(b => b.dataset.u === u);
+    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
+  }
+
+  function updateEpDisp(u) {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const i = bs.findIndex(b => b.dataset.u === u);
+    const el = d.getElementById("curEp");
+    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
+  }
+
+  function hi(u) {
+    updateEpDisp(u);
+    d.querySelectorAll(".btn-num").forEach(b => {
+      const a = b.dataset.u === u;
+      b.style.background = a ? "#0f0" : "#222";
+      b.style.color = a ? "#000" : "#fff";
+    });
+  }
+
+  // 修改：儲存時帶上槽位後綴
+  L.oninput = () => { localStorage.setItem("tv_l_s" + curS, L.value); gen(); };
+
+  setInterval(() => {
+    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
+      localStorage.setItem("tv_u_s" + curS, dp.video.dataset.u);
+      localStorage.setItem("tv_last_time_s" + curS, dp.video.currentTime);
+    }
+  }, 3000);
+</script>
+</body>
+</html>
