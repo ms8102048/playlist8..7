@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 全能播放器 (三清單同步版)</title>
+  <title>Git播放器v2</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -30,7 +30,7 @@
 <div id="AutoNotice">成功</div>
 
 <div class="slot-group">
-  <button id="S1" class="btn-slot active" onclick="changeSlot(1)">劇 1</button>
+  <button id="S1" class="btn-slot" onclick="changeSlot(1)">劇 1</button>
   <button id="S2" class="btn-slot" onclick="changeSlot(2)">劇 2</button>
   <button id="S3" class="btn-slot" onclick="changeSlot(3)">劇 3</button>
 </div>
@@ -53,13 +53,16 @@
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
-  let dp = null, curS = 1;
+  let dp = null;
   
-  // 核心資料庫結構
-  let db = {
-    1: { list: "", url: "", time: 0 },
-    2: { list: "", url: "", time: 0 },
-    3: { list: "", url: "", time: 0 }
+  // 核心封裝物件
+  let appState = {
+    activeSlot: 1,
+    slots: {
+      1: { list: "", url: "", time: 0 },
+      2: { list: "", url: "", time: 0 },
+      3: { list: "", url: "", time: 0 }
+    }
   };
 
   const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
@@ -69,40 +72,48 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 同步當前 UI 狀態到 db 記憶體並存入 LocalStorage
-  function localSync() {
-    db[curS].list = L.value; // 確保當前編輯框的清單有存進去
+  // 同步目前 UI 狀態到記憶體物件與 LocalStorage
+  function syncToLocal() {
+    const cur = appState.activeSlot;
+    appState.slots[cur].list = L.value;
     if (dp) {
-      db[curS].url = dp.video.dataset.u;
-      db[curS].time = dp.video.currentTime;
+      appState.slots[cur].url = dp.video.dataset.u;
+      appState.slots[cur].time = dp.video.currentTime;
     }
-    localStorage.setItem("all_slots_v2", JSON.stringify(db));
+    localStorage.setItem("git_player_full_state", JSON.stringify(appState));
   }
 
-  function changeSlot(s) {
-    localSync(); // 切換前先保存舊槽位的完整清單與進度
-    curS = s;
+  function changeSlot(s, autoLoad = true) {
+    if (s === appState.activeSlot && dp && autoLoad) return; // 避免重複點擊同槽位重複加載視頻
+    
+    syncToLocal(); // 保存舊槽位
+    appState.activeSlot = s; // 更新目前槽位編號
+    
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S'+s).classList.add('active');
     
-    // 載入新槽位的資料
-    L.value = db[s].list || "";
+    L.value = appState.slots[s].list || "";
     gen();
-    if (db[s].url) {
-      load(db[s].url, db[s].time);
-    } else if (dp) {
-      dp.pause();
+    
+    if (autoLoad) {
+      if (appState.slots[s].url) {
+        load(appState.slots[s].url, appState.slots[s].time);
+      } else if (dp) {
+        dp.pause();
+      }
     }
-    showNotice(`切換至 劇 ${s} (已載入對應清單)`);
+    showNotice(`目前位置：劇 ${s}`);
   }
 
   window.onload = () => {
-    const saved = localStorage.getItem("all_slots_v2");
-    if (saved) { db = JSON.parse(saved); }
-    changeSlot(1);
+    const saved = localStorage.getItem("git_player_full_state");
+    if (saved) { 
+      appState = JSON.parse(saved); 
+    }
+    changeSlot(appState.activeSlot); // 恢復到上次離開時的槽位
   };
 
-  // 手動：讀取雲端（一次拿回三個劇的資料）
+  // 手動：讀取雲端 (一次取回所有槽位+目前位置)
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
@@ -110,19 +121,19 @@
     window[cbName] = (data) => {
       if (data && data.list) {
         try {
-          // 嘗試解開打包的 JSON
-          const remoteDb = JSON.parse(data.list);
-          db = remoteDb;
-          localStorage.setItem("all_slots_v2", data.list);
-          changeSlot(curS); // 刷新 UI
-          showNotice("✅ 雲端同步完成：三個劇集清單已就緒");
+          const remoteData = JSON.parse(data.list);
+          appState = remoteData;
+          localStorage.setItem("git_player_full_state", data.list);
+          // 根據雲端記錄的 activeSlot 自動切換並加載
+          changeSlot(appState.activeSlot);
+          showNotice("✅ 雲端同步：已還原所有劇集與位置");
         } catch(e) {
-          // 容錯處裡：如果雲端是舊的純文字清單
-          db[curS].list = data.list;
-          db[curS].url = data.url || "";
-          db[curS].time = data.time || 0;
-          changeSlot(curS);
-          showNotice("⚠️ 偵測到舊版單一資料，已放入當前槽位");
+          // 容錯：處理舊格式清單
+          appState.slots[appState.activeSlot].list = data.list;
+          appState.slots[appState.activeSlot].url = data.url || "";
+          appState.slots[appState.activeSlot].time = data.time || 0;
+          changeSlot(appState.activeSlot);
+          showNotice("⚠️ 已載入舊版單一進度");
         }
       }
       delete window[cbName]; d.body.removeChild(script);
@@ -132,20 +143,20 @@
     d.body.appendChild(script);
   };
 
-  // 手動：寫入雲端（一次上傳三個劇的資料）
+  // 手動：寫入雲端 (一次上傳所有槽位+目前位置)
   BtnWrite.onclick = () => {
-    localSync(); // 寫入前最後確認三個槽位的資料都已更新到 db 物件
+    syncToLocal(); // 確保上傳前資料最新
     BtnWrite.innerText = "寫入中...";
     
     const payload = {
-      list: JSON.stringify(db), // 這裡包含了 1, 2, 3 所有的清單與進度
-      url: db[curS].url,
-      time: db[curS].time
+      list: JSON.stringify(appState), // 打包整個 appState
+      url: appState.slots[appState.activeSlot].url, // 留著相容後端
+      time: appState.slots[appState.activeSlot].time
     };
     
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
       .then(() => {
-        showNotice("💾 雲端備份成功：已儲存所有槽位資料");
+        showNotice("💾 雲端存檔成功：包含 3 個槽位與目前位置");
         BtnWrite.innerText = "寫入同步進度";
       });
   };
@@ -159,7 +170,7 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => { localSync(); load(u, 0); };
+      b.onclick = () => { syncToLocal(); load(u, 0); };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -229,10 +240,9 @@
     });
   }
 
-  // 監聽清單輸入，即時更新到對應槽位記憶區
   L.oninput = () => { 
-    db[curS].list = L.value; 
-    localStorage.setItem("all_slots_v2", JSON.stringify(db));
+    appState.slots[appState.activeSlot].list = L.value; 
+    localStorage.setItem("git_player_full_state", JSON.stringify(appState));
     gen(); 
   };
 </script>
