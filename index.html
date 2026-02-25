@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器v2</title>
+  <title>Git 全能播放器 (三槽清單同步修正版)</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -55,7 +55,7 @@
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
   
-  // 核心封裝物件
+  // 初始化核心資料
   let appState = {
     activeSlot: 1,
     slots: {
@@ -72,7 +72,7 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 同步目前 UI 狀態到記憶體物件與 LocalStorage
+  // 1. 同步當前狀態到 appState 物件與本地緩存
   function syncToLocal() {
     const cur = appState.activeSlot;
     appState.slots[cur].list = L.value;
@@ -80,40 +80,40 @@
       appState.slots[cur].url = dp.video.dataset.u;
       appState.slots[cur].time = dp.video.currentTime;
     }
-    localStorage.setItem("git_player_full_state", JSON.stringify(appState));
+    localStorage.setItem("git_player_v3", JSON.stringify(appState));
   }
 
-  function changeSlot(s, autoLoad = true) {
-    if (s === appState.activeSlot && dp && autoLoad) return; // 避免重複點擊同槽位重複加載視頻
+  // 2. 切換槽位核心邏輯
+  function changeSlot(s, isFirstLoad = false) {
+    if (!isFirstLoad) syncToLocal(); // 切換前保存舊槽位修改
     
-    syncToLocal(); // 保存舊槽位
-    appState.activeSlot = s; // 更新目前槽位編號
-    
+    appState.activeSlot = s;
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S'+s).classList.add('active');
     
-    L.value = appState.slots[s].list || "";
-    gen();
+    // 關鍵：先更新清單文字內容
+    const targetData = appState.slots[s];
+    L.value = targetData.list || "";
+    gen(); // 根據清單產生按鈕
     
-    if (autoLoad) {
-      if (appState.slots[s].url) {
-        load(appState.slots[s].url, appState.slots[s].time);
-      } else if (dp) {
-        dp.pause();
-      }
+    // 如果有記錄網址，載入影片
+    if (targetData.url) {
+      load(targetData.url, targetData.time || 0);
+    } else if (dp) {
+      dp.pause();
     }
-    showNotice(`目前位置：劇 ${s}`);
+    showNotice(`切換至 劇 ${s}`);
   }
 
   window.onload = () => {
-    const saved = localStorage.getItem("git_player_full_state");
+    const saved = localStorage.getItem("git_player_v3");
     if (saved) { 
       appState = JSON.parse(saved); 
     }
-    changeSlot(appState.activeSlot); // 恢復到上次離開時的槽位
+    changeSlot(appState.activeSlot, true);
   };
 
-  // 手動：讀取雲端 (一次取回所有槽位+目前位置)
+  // 3. 手動：讀取雲端 (包含三個槽位的清單與進度)
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
@@ -122,18 +122,18 @@
       if (data && data.list) {
         try {
           const remoteData = JSON.parse(data.list);
-          appState = remoteData;
-          localStorage.setItem("git_player_full_state", data.list);
-          // 根據雲端記錄的 activeSlot 自動切換並加載
-          changeSlot(appState.activeSlot);
-          showNotice("✅ 雲端同步：已還原所有劇集與位置");
+          appState = remoteData; // 徹底覆蓋本地物件
+          localStorage.setItem("git_player_v3", data.list);
+          // 強制切換至記錄中的槽位並刷新 UI
+          changeSlot(appState.activeSlot, true);
+          showNotice("✅ 雲端同步成功：清單與位置已還原");
         } catch(e) {
-          // 容錯：處理舊格式清單
+          // 容錯舊格式
           appState.slots[appState.activeSlot].list = data.list;
           appState.slots[appState.activeSlot].url = data.url || "";
           appState.slots[appState.activeSlot].time = data.time || 0;
-          changeSlot(appState.activeSlot);
-          showNotice("⚠️ 已載入舊版單一進度");
+          changeSlot(appState.activeSlot, true);
+          showNotice("⚠️ 載入舊版清單");
         }
       }
       delete window[cbName]; d.body.removeChild(script);
@@ -143,20 +143,18 @@
     d.body.appendChild(script);
   };
 
-  // 手動：寫入雲端 (一次上傳所有槽位+目前位置)
+  // 4. 手動：寫入雲端 (打包所有資料)
   BtnWrite.onclick = () => {
-    syncToLocal(); // 確保上傳前資料最新
+    syncToLocal();
     BtnWrite.innerText = "寫入中...";
-    
     const payload = {
-      list: JSON.stringify(appState), // 打包整個 appState
-      url: appState.slots[appState.activeSlot].url, // 留著相容後端
+      list: JSON.stringify(appState),
+      url: appState.slots[appState.activeSlot].url,
       time: appState.slots[appState.activeSlot].time
     };
-    
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
       .then(() => {
-        showNotice("💾 雲端存檔成功：包含 3 個槽位與目前位置");
+        showNotice("💾 雲端存檔成功：包含 3 個槽位");
         BtnWrite.innerText = "寫入同步進度";
       });
   };
@@ -184,67 +182,4 @@
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       dp.play();
-    } else {
-      dp = new DPlayer({
-        container: d.getElementById('dplayer'),
-        autoplay: true, hotkey: true,
-        video: { url: freshUrl, type: 'hls' }
-      });
-      dp.video.dataset.u = u;
-      if (t > 0) dp.seek(t);
-      dp.on('ended', () => nextVideo());
-      
-      const btnBox = d.createElement('div');
-      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-      const curEp = d.createElement('div'); curEp.id = "curEp";
-      curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
-      
-      const createQuickBtn = (text, action) => {
-        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
-        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-        btn.onclick = (e) => { e.stopPropagation(); action(); };
-        return btn;
-      };
-      btnBox.appendChild(curEp);
-      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-      const ir = d.querySelector('.dplayer-icons-right');
-      if (ir) ir.insertBefore(btnBox, ir.firstChild);
-    }
-    updateEpDisp(u); 
-  }
-
-  function nextVideo() {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
-    const i = bs.findIndex(b => b.dataset.u === u);
-    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
-  }
-
-  function updateEpDisp(u) {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const i = bs.findIndex(b => b.dataset.u === u);
-    const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
-  }
-
-  function hi(u) {
-    updateEpDisp(u);
-    d.querySelectorAll(".btn-num").forEach(b => {
-      const a = b.dataset.u === u;
-      b.style.background = a ? "#0f0" : "#222";
-      b.style.color = a ? "#000" : "#fff";
-    });
-  }
-
-  L.oninput = () => { 
-    appState.slots[appState.activeSlot].list = L.value; 
-    localStorage.setItem("git_player_full_state", JSON.stringify(appState));
-    gen(); 
-  };
-</script>
-</body>
-</html>
+    } else
