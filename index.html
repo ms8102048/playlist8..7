@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 播放器 - 三槽穩定版</title>
+  <title>Git 播放器 - 三槽穩定修復版</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -12,7 +12,6 @@
     textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
     
-    /* 槽位切換按鈕 */
     .slot-group { display: flex; gap: 8px; margin-bottom: 10px; }
     .btn-slot { background: #222; color: #888; border: 1px solid #444; flex: 1; height: 35px; cursor: pointer; border-radius: 4px; font-weight: bold; }
     .btn-slot.active { background: #5a1a5a; color: #f0f; border: 1px solid #8a2a8a; }
@@ -65,7 +64,7 @@
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
 
-  // 1. 初始化資料結構：這就是我們的「記憶體」，負責裝三個槽位
+  // 核心資料物件
   let appData = {
     active: 1,
     s1: { l: "", u: "", t: 0 },
@@ -80,67 +79,74 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 將當前畫面上的狀態「存回記憶體」
-  function saveToMem() {
+  // 同步當前 UI 到記憶體物件
+  function syncUItoMem() {
     const s = "s" + appData.active;
     appData[s].l = L.value;
-    if (dp) {
+    if (dp && dp.video.dataset.u) {
       appData[s].u = dp.video.dataset.u;
       appData[s].t = dp.video.currentTime;
     }
-    localStorage.setItem("tv_all_slots", JSON.stringify(appData));
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
 
-  // 切換槽位：像換一台機器一樣
-  function switchSlot(num) {
-    saveToMem(); // 切換前先保存舊的
+  // 切換槽位邏輯：存舊 -> 換號 -> 刷UI
+  function switchSlot(num, isInitial = false) {
+    if (!isInitial) syncUItoMem(); // 如果是點擊切換，先存下當前的
+    
     appData.active = num;
     
-    // UI 高亮
+    // 1. 更新按鈕外觀
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S' + num).classList.add('active');
 
-    // 載入新槽位資料
-    const s = "s" + num;
-    L.value = appData[s].l || "";
-    gen();
-    if (appData[s].u) {
-      load(appData[s].u, appData[s].t);
+    // 2. 關鍵：把記憶體資料填回 UI
+    const data = appData["s" + num];
+    L.value = data.l || "";
+    
+    // 3. 關鍵：立即重新生成按鈕清單
+    gen(); 
+
+    // 4. 載入影片進度
+    if (data.u) {
+      load(data.u, data.t || 0);
     } else if (dp) {
-      dp.pause();
+      dp.pause(); // 切換到空槽位時暫停
     }
-    showNotice("已切換至 劇 " + num);
+    
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+    if(!isInitial) showNotice("切換至 劇 " + num);
   }
 
   window.onload = () => {
-    const saved = localStorage.getItem("tv_all_slots");
+    const saved = localStorage.getItem("tv_v4_data");
     if (saved) {
-      appData = JSON.parse(saved);
+      try { appData = JSON.parse(saved); } catch(e) {}
     }
-    switchSlot(appData.active || 1);
+    switchSlot(appData.active || 1, true);
   };
 
-  // 讀取：從雲端拿回「大禮包」
+  // 讀取：一次抓回 3 個槽位的「大禮包」
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
     const script = d.createElement('script');
-    window[cbName] = (data) => {
-      if (data && data.list) {
+    window[cbName] = (res) => {
+      if (res && res.list) {
         try {
-          // 嘗試解開大禮包
-          const cloudData = JSON.parse(data.list);
-          appData = cloudData;
-          localStorage.setItem("tv_all_slots", JSON.stringify(appData));
-          switchSlot(appData.active); // 重新啟動目前槽位
-          showNotice("✅ 雲端三槽同步完成");
+          const cloud = JSON.parse(res.list);
+          appData = cloud; // 覆蓋整個記憶體
+          localStorage.setItem("tv_v4_data", res.list);
+          // 強制刷新當前 UI
+          switchSlot(appData.active, true);
+          showNotice("✅ 雲端同步成功 (3個劇集)");
         } catch(e) {
-          // 容錯：如果雲端是舊格式(純文字清單)，就放在當前槽位
-          appData["s" + appData.active].l = data.list;
-          if(data.url) appData["s" + appData.active].u = data.url;
-          if(data.time) appData["s" + appData.active].t = data.time;
-          switchSlot(appData.active);
-          showNotice("⚠️ 已載入舊版單一進度");
+          // 容錯舊格式：把雲端字串塞進目前槽位
+          appData["s" + appData.active].l = res.list;
+          appData["s" + appData.active].u = res.url || "";
+          appData["s" + appData.active].t = res.time || 0;
+          switchSlot(appData.active, true);
+          showNotice("⚠️ 載入舊版清單");
         }
       }
       delete window[cbName]; d.body.removeChild(script);
@@ -150,23 +156,20 @@
     d.body.appendChild(script);
   };
 
-  // 寫入：把「大禮包」壓成字串送給雲端
+  // 寫入：把 3 個槽位打包成一個 JSON 字串送去雲端
   BtnWrite.onclick = () => {
-    saveToMem(); // 確保資料是最新的
+    syncUItoMem(); // 確保打包前抓到最新進度
     BtnWrite.innerText = "寫入中...";
     const payload = {
-      list: JSON.stringify(appData), // 這裡把三個槽位的內容全部打包
+      list: JSON.stringify(appData),
       url: dp ? dp.video.dataset.u : "",
       time: dp ? dp.video.currentTime : 0
     };
-    fetch(API_URL, {
-      method: "POST",
-      mode: "no-cors",
-      body: JSON.stringify(payload)
-    }).then(() => {
-      showNotice("💾 雲端備份成功");
-      BtnWrite.innerText = "寫入同步進度";
-    });
+    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+      .then(() => {
+        showNotice("💾 雲端備份成功");
+        BtnWrite.innerText = "寫入同步進度";
+      });
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -178,7 +181,7 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => load(u, 0);
+      b.onclick = () => { syncUItoMem(); load(u, 0); };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -186,8 +189,9 @@
 
   function load(u, t) {
     hi(u);
+    const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
     if (dp) {
-      dp.switchVideo({ url: u, type: 'hls' });
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       dp.play();
@@ -195,11 +199,12 @@
       dp = new DPlayer({
         container: d.getElementById('dplayer'),
         autoplay: true, hotkey: true,
-        video: { url: u, type: 'hls' }
+        video: { url: freshUrl, type: 'hls' }
       });
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       dp.on('ended', () => nextVideo());
+      
       const btnBox = d.createElement('div');
       btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
       const curEp = d.createElement('div'); curEp.id = "curEp";
@@ -245,10 +250,15 @@
     });
   }
 
-  L.oninput = () => { gen(); saveToMem(); };
+  // 內容輸入時即時存入記憶體
+  L.oninput = () => { 
+    appData["s" + appData.active].l = L.value; 
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+    gen(); 
+  };
 
-  // 每3秒保存一次「本地進度」
-  setInterval(saveToMem, 3000);
+  // 定期存檔進度到記憶體
+  setInterval(syncUItoMem, 3000);
 </script>
 </body>
 </html>
