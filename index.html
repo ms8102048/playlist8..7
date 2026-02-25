@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git 多劇播放器</title>
+  <title>Git 全能播放器</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -12,14 +12,13 @@
     textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
     
+    .slot-group { display: flex; gap: 8px; margin-bottom: 10px; }
+    .btn-slot { background: #222; color: #888; border: 1px solid #444; flex: 1; height: 35px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    .btn-slot.active { background: #5a1a5a; color: #f0f; border: 1px solid #8a2a8a; }
+
     .btn-group { display: flex; gap: 8px; margin-bottom: 10px; }
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 13px; }
     
-    /* 劇集切換按鈕樣式 */
-    .slot-group { display: flex; gap: 8px; margin-bottom: 10px; }
-    .btn-slot { background: #333; color: #aaa; border: 1px solid #555; }
-    .btn-slot.active { background: #8e44ad; color: #fff; border: 1px solid #a29bfe; }
-
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; flex: none; }
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
@@ -40,9 +39,9 @@
 <div id="AutoNotice">成功</div>
 
 <div class="slot-group">
-  <button onclick="switchSlot(1)" id="slot1" class="btn-slot active">劇 1</button>
-  <button onclick="switchSlot(2)" id="slot2" class="btn-slot">劇 2</button>
-  <button onclick="switchSlot(3)" id="slot3" class="btn-slot">劇 3</button>
+  <button id="S1" class="btn-slot active" onclick="changeSlot(1)">劇 1</button>
+  <button id="S2" class="btn-slot" onclick="changeSlot(2)">劇 2</button>
+  <button id="S3" class="btn-slot" onclick="changeSlot(3)">劇 3</button>
 </div>
 
 <div id="UI">
@@ -63,85 +62,94 @@
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
-  let dp = null;
-  let currentSlot = 1; // 當前正在看哪一齣劇
+  let dp = null, curS = 1;
+  
+  let db = {
+    1: { list: "", url: "", time: 0 },
+    2: { list: "", url: "", time: 0 },
+    3: { list: "", url: "", time: 0 }
+  };
 
   const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
 
   function showNotice(msg) {
-    NT.innerText = msg;
-    NT.style.display = 'block';
+    NT.innerText = msg; NT.style.display = 'block';
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 切換儲存槽
-  function switchSlot(slotNum) {
-    currentSlot = slotNum;
-    // 更新按鈕外觀
-    d.querySelectorAll('.btn-slot').forEach(btn => btn.classList.remove('active'));
-    d.getElementById('slot' + slotNum).classList.add('active');
-    
-    // 載入該槽位的清單與進度
-    const savedL = localStorage.getItem("tv_l_" + currentSlot);
-    L.value = savedL ? savedL : "";
-    gen();
-    
-    const savedU = localStorage.getItem("tv_u_" + currentSlot);
-    const savedT = localStorage.getItem("tv_t_" + currentSlot);
-    if (savedU) {
-        load(savedU, savedT || 0);
-        showNotice("已載入 劇 " + slotNum);
-    } else {
-        if(dp) { dp.pause(); } // 如果沒資料就先停掉目前的
-        showNotice("劇 " + slotNum + " 空白槽位");
+  // 純本地存檔（切換或輸入時觸發）
+  function localSync() {
+    db[curS].list = L.value;
+    if (dp) {
+      db[curS].url = dp.video.dataset.u;
+      db[curS].time = dp.video.currentTime;
     }
+    localStorage.setItem("all_slots", JSON.stringify(db));
+  }
+
+  function changeSlot(s) {
+    localSync(); // 切換前先存目前這齣到本地
+    curS = s;
+    d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
+    d.getElementById('S'+s).classList.add('active');
+    
+    L.value = db[s].list || "";
+    gen();
+    if (db[s].url) {
+      load(db[s].url, db[s].time);
+    } else if (dp) {
+      dp.pause();
+    }
+    showNotice(`本地已載入 劇 ${s}`);
   }
 
   window.onload = () => {
-    // 預設啟動時載入上次最後使用的槽位(若無則用槽位1)
-    const lastActive = localStorage.getItem("last_active_slot") || 1;
-    switchSlot(parseInt(lastActive));
+    const saved = localStorage.getItem("all_slots");
+    if (saved) { db = JSON.parse(saved); }
+    changeSlot(1);
   };
 
+  // 手動：讀取雲端
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
     const script = d.createElement('script');
     window[cbName] = (data) => {
       if (data && data.list) {
-        L.value = data.list;
-        localStorage.setItem("tv_l_" + currentSlot, data.list);
-        gen();
-        if (data.url) load(data.url, data.time || 0);
-        showNotice("✅ 讀取同步成功 (劇 " + currentSlot + ")");
+        try {
+          db = JSON.parse(data.list);
+          localStorage.setItem("all_slots", data.list);
+          changeSlot(curS);
+          showNotice("✅ 雲端同步完成 (全槽位)");
+        } catch(e) {
+          db[curS].list = data.list;
+          db[curS].url = data.url || "";
+          db[curS].time = data.time || 0;
+          changeSlot(curS);
+          showNotice("⚠️ 載入單一舊格式");
+        }
       }
-      delete window[cbName];
-      d.body.removeChild(script);
+      delete window[cbName]; d.body.removeChild(script);
       BtnRead.innerText = "讀取同步進度";
     };
-    script.onerror = () => { alert("讀取發生錯誤"); BtnRead.innerText = "讀取同步進度"; };
     script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
     d.body.appendChild(script);
   };
 
+  // 手動：寫入雲端
   BtnWrite.onclick = () => {
+    localSync(); // 寫入前確保 db 資料是最新的
     BtnWrite.innerText = "寫入中...";
     const payload = {
-      list: L.value,
-      url: dp ? dp.video.dataset.u : (localStorage.getItem("tv_u_" + currentSlot) || ""),
-      time: dp ? dp.video.currentTime : (localStorage.getItem("tv_t_" + currentSlot) || 0)
+      list: JSON.stringify(db),
+      url: db[curS].url,
+      time: db[curS].time
     };
-    fetch(API_URL, {
-      method: "POST",
-      mode: "no-cors",
-      body: JSON.stringify(payload)
-    }).then(() => {
-      showNotice("💾 雲端存檔成功");
-      BtnWrite.innerText = "寫入同步進度";
-    }).catch(() => {
-      alert("寫入失敗");
-      BtnWrite.innerText = "寫入同步進度";
-    });
+    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+      .then(() => {
+        showNotice("💾 雲端備份成功 (全槽位)");
+        BtnWrite.innerText = "寫入同步進度";
+      });
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -153,7 +161,7 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => load(u, 0);
+      b.onclick = () => { localSync(); load(u, 0); };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -162,47 +170,38 @@
   function load(u, t) {
     hi(u);
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
-    
     if (dp) {
-        dp.switchVideo({ url: freshUrl, type: 'hls' });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.play();
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.play();
     } else {
-        dp = new DPlayer({
-            container: d.getElementById('dplayer'),
-            autoplay: true,
-            hotkey: true,
-            video: { url: freshUrl, type: 'hls' }
-        });
-        dp.video.dataset.u = u;
-        if (t > 0) dp.seek(t);
-        dp.on('ended', () => nextVideo());
-        
-        const btnBox = d.createElement('div');
-        btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-        
-        const curEp = d.createElement('div');
-        curEp.id = "curEp";
-        curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
-
-        const createQuickBtn = (text, action) => {
-            const btn = d.createElement('div');
-            btn.className = 'dplayer-icon';
-            btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-            btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-            btn.onclick = (e) => { e.stopPropagation(); action(); };
-            return btn;
-        };
-
-        btnBox.appendChild(curEp);
-        btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-        btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-        btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-        btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-        
-        const ir = d.querySelector('.dplayer-icons-right');
-        if (ir) ir.insertBefore(btnBox, ir.firstChild);
+      dp = new DPlayer({
+        container: d.getElementById('dplayer'),
+        autoplay: true, hotkey: true,
+        video: { url: freshUrl, type: 'hls' }
+      });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.on('ended', () => nextVideo());
+      const btnBox = d.createElement('div');
+      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+      const curEp = d.createElement('div'); curEp.id = "curEp";
+      curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+      const createQuickBtn = (text, action) => {
+        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
+        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); action(); };
+        return btn;
+      };
+      btnBox.appendChild(curEp);
+      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+      const ir = d.querySelector('.dplayer-icons-right');
+      if (ir) ir.insertBefore(btnBox, ir.firstChild);
     }
     updateEpDisp(u); 
   }
@@ -230,19 +229,7 @@
     });
   }
 
-  L.oninput = () => { 
-    localStorage.setItem("tv_l_" + currentSlot, L.value); 
-    gen(); 
-  };
-
-  // 每 3 秒自動儲存一次目前槽位的進度
-  setInterval(() => {
-    if (dp && dp.video.currentTime > 0 && !dp.video.paused) {
-      localStorage.setItem("tv_u_" + currentSlot, dp.video.dataset.u);
-      localStorage.setItem("tv_t_" + currentSlot, dp.video.currentTime);
-      localStorage.setItem("last_active_slot", currentSlot);
-    }
-  }, 3000);
+  L.oninput = () => { db[curS].list = L.value; gen(); };
 </script>
 </body>
 </html>
