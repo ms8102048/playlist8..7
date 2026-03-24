@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3</title>
+  <title>Git播放器3-智慧跳轉版</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -64,6 +64,14 @@
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
 
+  // 核心重連狀態
+  let retryState = { 
+    baseTime: 0, 
+    count: 0,    // 該階段重試次數
+    offset: 0,   // 目前累計跳轉秒數
+    isActive: false 
+  };
+
   let appData = {
     active: 1,
     s1: { l: "", u: "", t: 0 },
@@ -73,9 +81,11 @@
 
   const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
 
-  function showNotice(msg) {
-    NT.innerText = msg; NT.style.display = 'block';
-    setTimeout(() => { NT.style.display = 'none'; }, 1000);
+  function showNotice(msg, color) {
+    NT.innerText = msg; 
+    NT.style.background = color || 'rgba(0, 128, 0, 0.9)';
+    NT.style.display = 'block';
+    setTimeout(() => { NT.style.display = 'none'; }, 2000);
   }
 
   function syncUItoMem() {
@@ -124,8 +134,6 @@
           showNotice("✅ 雲端同步成功");
         } catch(e) {
           appData["s" + appData.active].l = res.list;
-          appData["s" + appData.active].u = res.url || "";
-          appData["s" + appData.active].t = res.time || 0;
           switchSlot(appData.active, true);
           showNotice("⚠️ 載入舊清單");
         }
@@ -161,7 +169,11 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => { syncUItoMem(); load(u, 0); };
+      b.onclick = () => { 
+        retryState.isActive = false; // 手動切換時重置重試狀態
+        syncUItoMem(); 
+        load(u, 0); 
+      };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -181,25 +193,56 @@
         autoplay: true, hotkey: true,
         hlsjsConfig: {
           enableWorker: true,
-          // 增加重試次數與容錯
-          maxBufferLength: 30,
-          fragLoadingMaxRetry: 10,
-          manifestLoadingMaxRetry: 10,
-          levelLoadingMaxRetry: 10,
+          fragLoadingMaxRetry: 5,
+          manifestLoadingMaxRetry: 5,
         },
         video: { url: freshUrl, type: 'hls' }
       });
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       
-      // --- 核心防卡死邏輯 ---
+      // --- 智慧跳轉邏輯 ---
       dp.on('error', () => {
-        console.log("偵測到錯誤，嘗試自動重連...");
-        const curTime = dp.video.currentTime;
+        if (!retryState.isActive) {
+          // 第一次發生錯誤，初始化狀態
+          retryState.isActive = true;
+          retryState.baseTime = dp.video.currentTime;
+          retryState.count = 0;
+          retryState.offset = 0;
+        }
+
+        retryState.count++;
+
+        if (retryState.count > 3) {
+          // 原地試了 3 次都不行，往後跳 5 秒
+          retryState.count = 1;
+          retryState.offset += 5;
+          showNotice(`⚠️ 原地加載失敗，跳轉至 +${retryState.offset}秒`, 'orange');
+        } else {
+          showNotice(`重試中 (${retryState.offset}s 處第 ${retryState.count} 次)`, '#555');
+        }
+
+        if (retryState.offset > 20) {
+          // 超過 20 秒都沒救，放棄
+          retryState.isActive = false;
+          showNotice("❌ 影片源失效或毀損嚴重，已停止重連", "red");
+          return;
+        }
+
+        // 執行重連
+        const targetTime = retryState.baseTime + retryState.offset;
         const curUrl = dp.video.dataset.u;
         setTimeout(() => {
-          load(curUrl, curTime); // 2秒後自動重新載入當前位置
-        }, 2000);
+          load(curUrl, targetTime);
+        }, 1500);
+      });
+
+      dp.on('play', () => {
+        // 只要成功跑起來了，就重置重試狀態
+        if (retryState.isActive) {
+          retryState.isActive = false;
+          showNotice("✅ 修復成功，恢復播放");
+        }
       });
 
       dp.on('ended', () => nextVideo());
