@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3-監控跳轉版</title>
+  <title>Git播放器3</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -11,17 +11,22 @@
     #UI { transition: all 0.3s; }
     textarea { width: 100%; height: 80px; background: #111; color: #fff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; padding: 5px; font-size: 14px; }
     #C { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+    
     .slot-group { display: flex; gap: 8px; margin-bottom: 10px; }
     .btn-slot { background: #222; color: #888; border: 1px solid #444; flex: 1; height: 35px; cursor: pointer; border-radius: 4px; font-weight: bold; }
     .btn-slot.active { background: #5a1a5a; color: #f0f; border: 1px solid #8a2a8a; }
+
     .btn-group { display: flex; gap: 8px; margin-bottom: 10px; }
     button { cursor: pointer; border: none; border-radius: 4px; font-weight: bold; flex: 1; height: 40px; font-size: 13px; }
+    
     .btn-num { min-width: 45px; height: 40px; background: #222; color: #fff; border: 1px solid #444; flex: none; }
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
+    
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
     .dplayer-icons-right { display: flex !important; align-items: center; }
+
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
       background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
@@ -32,20 +37,24 @@
 <body>
 
 <div id="AutoNotice">成功</div>
+
 <div class="slot-group">
   <button id="S1" class="btn-slot" onclick="switchSlot(1)">劇 1</button>
   <button id="S2" class="btn-slot" onclick="switchSlot(2)">劇 2</button>
   <button id="S3" class="btn-slot" onclick="switchSlot(3)">劇 3</button>
 </div>
+
 <div id="UI">
   <textarea id="L" placeholder="在此貼入清單 (格式: 名稱$網址)"></textarea>
   <div id="C"></div>
 </div>
+
 <div class="btn-group">
   <button id="T" class="btn-ctrl">展開/收合</button>
   <button id="BtnRead" class="btn-ctrl">讀取同步進度</button>
   <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
 </div>
+
 <div id="dplayer"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -54,21 +63,20 @@
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
-  let retryCount = 0;
-  let totalOffset = 0;
-  let lastTime = -1;
-  let stallTimer = null;
 
+  // 核心資料物件
   let appData = {
     active: 1,
-    s1: { l: "", u: "", t: 0 }, s2: { l: "", u: "", t: 0 }, s3: { l: "", u: "", t: 0 }
+    s1: { l: "", u: "", t: 0 },
+    s2: { l: "", u: "", t: 0 },
+    s3: { l: "", u: "", t: 0 }
   };
 
   const API_URL = "https://script.google.com/macros/s/AKfycbyXpcaYtHeZVPtiOOr6R8PHL1womW9nhJgV9673K4Hgq4aJ_zmn2HYVgLqRaT12kbLi_Q/exec";
 
-  function showNotice(msg, color) {
-    NT.innerText = msg; NT.style.background = color || 'rgba(0, 128, 0, 0.9)';
-    NT.style.display = 'block'; setTimeout(() => { NT.style.display = 'none'; }, 2000);
+  function showNotice(msg) {
+    NT.innerText = msg; NT.style.display = 'block';
+    setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
   function syncUItoMem() {
@@ -83,61 +91,32 @@
 
   function switchSlot(num, isInitial = false) {
     if (!isInitial) syncUItoMem();
+    
     appData.active = num;
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S' + num).classList.add('active');
-    L.value = appData["s" + num].l || "";
+
+    const data = appData["s" + num];
+    L.value = data.l || "";
     gen(); 
-    if (appData["s" + num].u) load(appData["s" + num].u, appData["s" + num].t || 0);
-    else if (dp) dp.pause();
+
+    if (data.u) {
+      load(data.u, data.t || 0);
+    } else if (dp) {
+      dp.pause();
+    }
+    
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+    if(!isInitial) showNotice("切換至 劇 " + num);
   }
 
   window.onload = () => {
     const saved = localStorage.getItem("tv_v4_data");
-    if (saved) { try { appData = JSON.parse(saved); } catch(e) {} }
+    if (saved) {
+      try { appData = JSON.parse(saved); } catch(e) {}
+    }
     switchSlot(appData.active || 1, true);
-    startStallMonitor(); // 啟動監視器
   };
-
-  // --- 核心：監視影片是否卡住 ---
-  function startStallMonitor() {
-    if (stallTimer) clearInterval(stallTimer);
-    stallTimer = setInterval(() => {
-      if (dp && !dp.video.paused) {
-        let cur = dp.video.currentTime;
-        if (cur > 0 && cur === lastTime) {
-          console.log("偵測到畫面凝固，觸發救援...");
-          handleRescue();
-        }
-        lastTime = cur;
-      }
-    }, 3000); // 每 3 秒檢查一次進度是否有在跑
-  }
-
-  function handleRescue() {
-    retryCount++;
-    const curUrl = dp.video.dataset.u;
-    let targetTime = dp.video.currentTime;
-
-    if (retryCount > 3) {
-      // 原地失敗 3 次，開始跳轉
-      retryCount = 1;
-      totalOffset += 5;
-      targetTime += 5;
-      showNotice(`🚀 跳過故障片段 (+${totalOffset}s)`, 'orange');
-    } else {
-      showNotice(`🔄 載入重試中 (${retryCount}/3)`, '#444');
-    }
-
-    if (totalOffset > 20) {
-      showNotice("❌ 損毀過於嚴重，停止救援", "red");
-      retryCount = 0; totalOffset = 0;
-      return;
-    }
-
-    load(curUrl, targetTime);
-  }
 
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
@@ -145,19 +124,40 @@
     const script = d.createElement('script');
     window[cbName] = (res) => {
       if (res && res.list) {
-        try { appData = JSON.parse(res.list); localStorage.setItem("tv_v4_data", res.list); switchSlot(appData.active, true); showNotice("✅ 同步成功"); }
-        catch(e) { appData["s" + appData.active].l = res.list; switchSlot(appData.active, true); }
+        try {
+          const cloud = JSON.parse(res.list);
+          appData = cloud;
+          localStorage.setItem("tv_v4_data", res.list);
+          switchSlot(appData.active, true);
+          showNotice("✅ 雲端同步成功 (3個劇集)");
+        } catch(e) {
+          appData["s" + appData.active].l = res.list;
+          appData["s" + appData.active].u = res.url || "";
+          appData["s" + appData.active].t = res.time || 0;
+          switchSlot(appData.active, true);
+          showNotice("⚠️ 載入舊版清單");
+        }
       }
-      delete window[cbName]; d.body.removeChild(script); BtnRead.innerText = "讀取同步進度";
+      delete window[cbName]; d.body.removeChild(script);
+      BtnRead.innerText = "讀取同步進度";
     };
     script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
     d.body.appendChild(script);
   };
 
   BtnWrite.onclick = () => {
-    syncUItoMem(); BtnWrite.innerText = "寫入中...";
-    const payload = { list: JSON.stringify(appData), url: dp ? dp.video.dataset.u : "", time: dp ? dp.video.currentTime : 0 };
-    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) }).then(() => { showNotice("💾 備份成功"); BtnWrite.innerText = "寫入同步進度"; });
+    syncUItoMem();
+    BtnWrite.innerText = "寫入中...";
+    const payload = {
+      list: JSON.stringify(appData),
+      url: dp ? dp.video.dataset.u : "",
+      time: dp ? dp.video.currentTime : 0
+    };
+    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+      .then(() => {
+        showNotice("💾 雲端備份成功");
+        BtnWrite.innerText = "寫入同步進度";
+      });
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -169,7 +169,7 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => { retryCount = 0; totalOffset = 0; syncUItoMem(); load(u, 0); };
+      b.onclick = () => { syncUItoMem(); load(u, 0); };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -190,59 +190,4 @@
         video: { url: freshUrl, type: 'hls' }
       });
       dp.video.dataset.u = u;
-      if (t > 0) dp.seek(t);
-      dp.on('play', () => { retryCount = 0; totalOffset = 0; }); // 只要能播就重置
-      dp.on('ended', () => nextVideo());
-      dp.on('error', () => { setTimeout(handleRescue, 1000); }); // 報錯也進救援
-
-      const btnBox = d.createElement('div');
-      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-      const curEp = d.createElement('div'); curEp.id = "curEp";
-      curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:5px; font-weight:bold; font-family:sans-serif;';
-      
-      const createQuickBtn = (text, action) => {
-        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
-        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-        btn.onclick = (e) => { e.stopPropagation(); action(); };
-        return btn;
-      };
-      btnBox.appendChild(curEp);
-      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-      const ir = d.querySelector('.dplayer-icons-right');
-      if (ir) ir.insertBefore(btnBox, ir.firstChild);
-    }
-    updateEpDisp(u); 
-  }
-
-  function nextVideo() {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
-    const i = bs.findIndex(b => b.dataset.u === u);
-    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
-  }
-
-  function updateEpDisp(u) {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const i = bs.findIndex(b => b.dataset.u === u);
-    const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? (i + 1) : "";
-  }
-
-  function hi(u) {
-    updateEpDisp(u);
-    d.querySelectorAll(".btn-num").forEach(b => {
-      const a = b.dataset.u === u;
-      b.style.background = a ? "#0f0" : "#222";
-      b.style.color = a ? "#000" : "#fff";
-    });
-  }
-
-  L.oninput = () => { appData["s" + appData.active].l = L.value; localStorage.setItem("tv_v4_data", JSON.stringify(appData)); gen(); };
-  setInterval(syncUItoMem, 3000);
-</script>
-</body>
-</html>
+      if (t > 0) dp.seek(t
