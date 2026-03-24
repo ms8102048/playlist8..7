@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3-原生大字版</title>
+  <title>Git播放器3-穩定加強版</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { transition: all 0.3s; }
@@ -23,16 +24,8 @@
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
     
-    /* 原生播放器容器 */
-    #player-wrap { width: 100%; background: #000; border-radius: 4px; overflow: hidden; }
-    video { width: 100%; aspect-ratio: 16/9; display: block; background: #000; }
-
-    /* 原生控制增強列 (原 DPlayer 右側圖標區的功能) */
-    #quick-bar { display: flex; align-items: center; justify-content: flex-end; gap: 15px; padding: 10px 5px; background: #111; }
-    .q-btn { cursor: pointer; font-size: 20px; user-select: none; }
-    
-    /* 核心修改 1/2：加大數字，去除邊框 */
-    #curEp { font-size: 28px; color: #0f0; padding: 0 5px; font-weight: bold; font-family: 'Courier New', monospace; /* 使用等寬字體讓數字更整齊 */ }
+    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
+    .dplayer-icons-right { display: flex !important; align-items: center; }
 
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
@@ -62,23 +55,14 @@
   <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
 </div>
 
-<div id="player-wrap">
-  <video id="v" controls playsinline></video>
-  <div id="quick-bar">
-    <div id="curEp"></div>
-    <div class="q-btn" onclick="v.currentTime -= 10">⏪</div>
-    <div class="q-btn" onclick="v.currentTime += 10">⏩</div>
-    <div class="q-btn" onclick="v.currentTime = 85">↩️</div>
-    <div class="q-btn" onclick="nextVideo()">⏭️</div>
-  </div>
-</div>
+<div id="dplayer"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
-  const v = d.getElementById("v");
-  let hls = null;
+  let dp = null;
 
   let appData = {
     active: 1,
@@ -97,9 +81,9 @@
   function syncUItoMem() {
     const s = "s" + appData.active;
     appData[s].l = L.value;
-    if (v.dataset.u) {
-      appData[s].u = v.dataset.u;
-      appData[s].t = v.currentTime;
+    if (dp && dp.video.dataset.u) {
+      appData[s].u = dp.video.dataset.u;
+      appData[s].t = dp.video.currentTime;
     }
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
@@ -114,9 +98,8 @@
     gen(); 
     if (data.u) {
       load(data.u, data.t || 0);
-    } else {
-      v.pause();
-      v.src = "";
+    } else if (dp) {
+      dp.pause();
     }
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     if(!isInitial) showNotice("切換至 劇 " + num);
@@ -135,10 +118,11 @@
     window[cbName] = (res) => {
       if (res && res.list) {
         try {
-          appData = JSON.parse(res.list);
+          const cloud = JSON.parse(res.list);
+          appData = cloud;
           localStorage.setItem("tv_v4_data", res.list);
           switchSlot(appData.active, true);
-          showNotice("✅ 雲端同步成功");
+          showNotice("✅ 雲端同步成功 (3個劇集)");
         } catch(e) {
           appData["s" + appData.active].l = res.list;
           appData["s" + appData.active].u = res.url || "";
@@ -159,8 +143,8 @@
     BtnWrite.innerText = "寫入中...";
     const payload = {
       list: JSON.stringify(appData),
-      url: v.dataset.u || "",
-      time: v.currentTime || 0
+      url: dp ? dp.video.dataset.u : "",
+      time: dp ? dp.video.currentTime : 0
     };
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
       .then(() => {
@@ -181,49 +165,72 @@
       b.onclick = () => { syncUItoMem(); load(u, 0); };
       C.appendChild(b);
     });
-    hi(v.dataset.u);
+    if (dp) hi(dp.video.dataset.u);
   }
 
   function load(u, t) {
     hi(u);
-    v.dataset.u = u;
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
-
-    if (Hls.isSupported()) {
-      if (hls) hls.destroy(); 
-      hls = new Hls();
-      hls.loadSource(freshUrl);
-      hls.attachMedia(v);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (t > 0) v.currentTime = t;
-        v.play();
+    if (dp) {
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.play();
+    } else {
+      dp = new DPlayer({
+        container: d.getElementById('dplayer'),
+        autoplay: true, hotkey: true,
+        // 優化設定：解決讀取報錯與卡頓
+        hlsjsConfig: {
+          enableWorker: true,
+          fragLoadingMaxRetry: 5,
+          manifestLoadingMaxRetry: 5,
+          levelLoadingMaxRetry: 5,
+          initialLiveManifestSize: 3
+        },
+        video: { url: freshUrl, type: 'hls' }
       });
-    } 
-    else if (v.canPlayType('application/vnd.apple.mpegurl')) {
-      v.src = freshUrl;
-      v.addEventListener('loadedmetadata', () => {
-        if (t > 0) v.currentTime = t;
-        v.play();
-      }, { once: true });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.on('ended', () => nextVideo());
+      
+      const btnBox = d.createElement('div');
+      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+      const curEp = d.createElement('div'); curEp.id = "curEp";
+      // 修改：集數數字放大，移除文字，顏色改鮮綠色
+      curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:5px; font-weight:bold; font-family:sans-serif;';
+      
+      const createQuickBtn = (text, action) => {
+        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
+        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); action(); };
+        return btn;
+      };
+      btnBox.appendChild(curEp);
+      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+      const ir = d.querySelector('.dplayer-icons-right');
+      if (ir) ir.insertBefore(btnBox, ir.firstChild);
     }
-    updateEpDisp(u);
+    updateEpDisp(u); 
   }
 
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = v.dataset.u || "";
+    const u = dp ? dp.video.dataset.u : "";
     const i = bs.findIndex(b => b.dataset.u === u);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   }
 
-  v.onended = () => nextVideo();
-
-  // 核心修改 2/2：移除 "第n集" 的文字，只顯示 n
   function updateEpDisp(u) {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === u);
     const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? `${i + 1}` : ""; // 這裡修改
+    // 修改：只顯示數字，不顯示「第、集」
+    if (el) el.innerText = i !== -1 ? (i + 1) : "";
   }
 
   function hi(u) {
