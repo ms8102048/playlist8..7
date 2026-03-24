@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3-原生版</title>
+  <title>Git播放器3-原生大字版</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
@@ -30,7 +30,9 @@
     /* 原生控制增強列 (原 DPlayer 右側圖標區的功能) */
     #quick-bar { display: flex; align-items: center; justify-content: flex-end; gap: 15px; padding: 10px 5px; background: #111; }
     .q-btn { cursor: pointer; font-size: 20px; user-select: none; }
-    #curEp { font-size: 12px; color: #0a0; border: 1px solid #050; padding: 2px 8px; border-radius: 3px; font-weight: bold; }
+    
+    /* 核心修改 1/2：加大數字，去除邊框 */
+    #curEp { font-size: 28px; color: #0f0; padding: 0 5px; font-weight: bold; font-family: 'Courier New', monospace; /* 使用等寬字體讓數字更整齊 */ }
 
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
@@ -182,14 +184,13 @@
     hi(v.dataset.u);
   }
 
-  // 核心修改：使用 Hls.js 驅動原生 Video 標籤
   function load(u, t) {
     hi(u);
     v.dataset.u = u;
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
 
     if (Hls.isSupported()) {
-      if (hls) hls.destroy(); // 銷毀舊實例
+      if (hls) hls.destroy(); 
       hls = new Hls();
       hls.loadSource(freshUrl);
       hls.attachMedia(v);
@@ -198,7 +199,6 @@
         v.play();
       });
     } 
-    // 支援原生 HLS (如 iOS Safari/Brave)
     else if (v.canPlayType('application/vnd.apple.mpegurl')) {
       v.src = freshUrl;
       v.addEventListener('loadedmetadata', () => {
@@ -216,14 +216,14 @@
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   }
 
-  // 播放結束自動下一集
   v.onended = () => nextVideo();
 
+  // 核心修改 2/2：移除 "第n集" 的文字，只顯示 n
   function updateEpDisp(u) {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === u);
     const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
+    if (el) el.innerText = i !== -1 ? `${i + 1}` : ""; // 這裡修改
   }
 
   function hi(u) {
