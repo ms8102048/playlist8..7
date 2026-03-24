@@ -79,6 +79,7 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
+  // 同步當前 UI 到記憶體物件
   function syncUItoMem() {
     const s = "s" + appData.active;
     appData[s].l = L.value;
@@ -89,21 +90,28 @@
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
 
+  // 切換槽位邏輯：存舊 -> 換號 -> 刷UI
   function switchSlot(num, isInitial = false) {
-    if (!isInitial) syncUItoMem();
+    if (!isInitial) syncUItoMem(); // 如果是點擊切換，先存下當前的
     
     appData.active = num;
+    
+    // 1. 更新按鈕外觀
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S' + num).classList.add('active');
 
+    // 2. 關鍵：把記憶體資料填回 UI
     const data = appData["s" + num];
     L.value = data.l || "";
+    
+    // 3. 關鍵：立即重新生成按鈕清單
     gen(); 
 
+    // 4. 載入影片進度
     if (data.u) {
       load(data.u, data.t || 0);
     } else if (dp) {
-      dp.pause();
+      dp.pause(); // 切換到空槽位時暫停
     }
     
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
@@ -118,6 +126,7 @@
     switchSlot(appData.active || 1, true);
   };
 
+  // 讀取：一次抓回 3 個槽位的「大禮包」
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
@@ -126,11 +135,13 @@
       if (res && res.list) {
         try {
           const cloud = JSON.parse(res.list);
-          appData = cloud;
+          appData = cloud; // 覆蓋整個記憶體
           localStorage.setItem("tv_v4_data", res.list);
+          // 強制刷新當前 UI
           switchSlot(appData.active, true);
           showNotice("✅ 雲端同步成功 (3個劇集)");
         } catch(e) {
+          // 容錯舊格式：把雲端字串塞進目前槽位
           appData["s" + appData.active].l = res.list;
           appData["s" + appData.active].u = res.url || "";
           appData["s" + appData.active].t = res.time || 0;
@@ -145,8 +156,9 @@
     d.body.appendChild(script);
   };
 
+  // 寫入：把 3 個槽位打包成一個 JSON 字串送去雲端
   BtnWrite.onclick = () => {
-    syncUItoMem();
+    syncUItoMem(); // 確保打包前抓到最新進度
     BtnWrite.innerText = "寫入中...";
     const payload = {
       list: JSON.stringify(appData),
@@ -190,4 +202,63 @@
         video: { url: freshUrl, type: 'hls' }
       });
       dp.video.dataset.u = u;
-      if (t > 0) dp.seek(t
+      if (t > 0) dp.seek(t);
+      dp.on('ended', () => nextVideo());
+      
+      const btnBox = d.createElement('div');
+      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+      const curEp = d.createElement('div'); curEp.id = "curEp";
+      curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
+      const createQuickBtn = (text, action) => {
+        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
+        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); action(); };
+        return btn;
+      };
+      btnBox.appendChild(curEp);
+      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+      const ir = d.querySelector('.dplayer-icons-right');
+      if (ir) ir.insertBefore(btnBox, ir.firstChild);
+    }
+    updateEpDisp(u); 
+  }
+
+  function nextVideo() {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const u = dp ? dp.video.dataset.u : "";
+    const i = bs.findIndex(b => b.dataset.u === u);
+    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
+  }
+
+  function updateEpDisp(u) {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const i = bs.findIndex(b => b.dataset.u === u);
+    const el = d.getElementById("curEp");
+    if (el) el.innerText = i !== -1 ? `第 ${i + 1} 集` : "";
+  }
+
+  function hi(u) {
+    updateEpDisp(u);
+    d.querySelectorAll(".btn-num").forEach(b => {
+      const a = b.dataset.u === u;
+      b.style.background = a ? "#0f0" : "#222";
+      b.style.color = a ? "#000" : "#fff";
+    });
+  }
+
+  // 內容輸入時即時存入記憶體
+  L.oninput = () => { 
+    appData["s" + appData.active].l = L.value; 
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+    gen(); 
+  };
+
+  // 定期存檔進度到記憶體
+  setInterval(syncUItoMem, 3000);
+</script>
+</body>
+</html>
