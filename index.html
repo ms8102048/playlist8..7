@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3-穩定加強版</title>
+  <title>Git播放器3</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -118,17 +118,16 @@
     window[cbName] = (res) => {
       if (res && res.list) {
         try {
-          const cloud = JSON.parse(res.list);
-          appData = cloud;
+          appData = JSON.parse(res.list);
           localStorage.setItem("tv_v4_data", res.list);
           switchSlot(appData.active, true);
-          showNotice("✅ 雲端同步成功 (3個劇集)");
+          showNotice("✅ 雲端同步成功");
         } catch(e) {
           appData["s" + appData.active].l = res.list;
           appData["s" + appData.active].u = res.url || "";
           appData["s" + appData.active].t = res.time || 0;
           switchSlot(appData.active, true);
-          showNotice("⚠️ 載入舊版清單");
+          showNotice("⚠️ 載入舊清單");
         }
       }
       delete window[cbName]; d.body.removeChild(script);
@@ -180,24 +179,34 @@
       dp = new DPlayer({
         container: d.getElementById('dplayer'),
         autoplay: true, hotkey: true,
-        // 優化設定：解決讀取報錯與卡頓
         hlsjsConfig: {
           enableWorker: true,
-          fragLoadingMaxRetry: 5,
-          manifestLoadingMaxRetry: 5,
-          levelLoadingMaxRetry: 5,
-          initialLiveManifestSize: 3
+          // 增加重試次數與容錯
+          maxBufferLength: 30,
+          fragLoadingMaxRetry: 10,
+          manifestLoadingMaxRetry: 10,
+          levelLoadingMaxRetry: 10,
         },
         video: { url: freshUrl, type: 'hls' }
       });
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
+      
+      // --- 核心防卡死邏輯 ---
+      dp.on('error', () => {
+        console.log("偵測到錯誤，嘗試自動重連...");
+        const curTime = dp.video.currentTime;
+        const curUrl = dp.video.dataset.u;
+        setTimeout(() => {
+          load(curUrl, curTime); // 2秒後自動重新載入當前位置
+        }, 2000);
+      });
+
       dp.on('ended', () => nextVideo());
       
       const btnBox = d.createElement('div');
       btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
       const curEp = d.createElement('div'); curEp.id = "curEp";
-      // 修改：集數數字放大，移除文字，顏色改鮮綠色
       curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:5px; font-weight:bold; font-family:sans-serif;';
       
       const createQuickBtn = (text, action) => {
@@ -229,7 +238,6 @@
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === u);
     const el = d.getElementById("curEp");
-    // 修改：只顯示數字，不顯示「第、集」
     if (el) el.innerText = i !== -1 ? (i + 1) : "";
   }
 
