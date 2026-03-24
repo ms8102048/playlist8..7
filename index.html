@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3</title>
+  <title>Git播放器3-原生版</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
     body { background: #000; color: #fff; margin: 0; padding: 10px; font-family: sans-serif; box-sizing: border-box; }
     #UI { transition: all 0.3s; }
@@ -24,8 +23,14 @@
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
     
-    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    .dplayer-icons-right { display: flex !important; align-items: center; }
+    /* 原生播放器容器 */
+    #player-wrap { width: 100%; background: #000; border-radius: 4px; overflow: hidden; }
+    video { width: 100%; aspect-ratio: 16/9; display: block; background: #000; }
+
+    /* 原生控制增強列 (原 DPlayer 右側圖標區的功能) */
+    #quick-bar { display: flex; align-items: center; justify-content: flex-end; gap: 15px; padding: 10px 5px; background: #111; }
+    .q-btn { cursor: pointer; font-size: 20px; user-select: none; }
+    #curEp { font-size: 12px; color: #0a0; border: 1px solid #050; padding: 2px 8px; border-radius: 3px; font-weight: bold; }
 
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
@@ -55,16 +60,24 @@
   <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
 </div>
 
-<div id="dplayer"></div>
+<div id="player-wrap">
+  <video id="v" controls playsinline></video>
+  <div id="quick-bar">
+    <div id="curEp"></div>
+    <div class="q-btn" onclick="v.currentTime -= 10">⏪</div>
+    <div class="q-btn" onclick="v.currentTime += 10">⏩</div>
+    <div class="q-btn" onclick="v.currentTime = 85">↩️</div>
+    <div class="q-btn" onclick="nextVideo()">⏭️</div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
-  let dp = null;
+  const v = d.getElementById("v");
+  let hls = null;
 
-  // 核心資料物件
   let appData = {
     active: 1,
     s1: { l: "", u: "", t: 0 },
@@ -79,54 +92,40 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 同步當前 UI 到記憶體物件
   function syncUItoMem() {
     const s = "s" + appData.active;
     appData[s].l = L.value;
-    if (dp && dp.video.dataset.u) {
-      appData[s].u = dp.video.dataset.u;
-      appData[s].t = dp.video.currentTime;
+    if (v.dataset.u) {
+      appData[s].u = v.dataset.u;
+      appData[s].t = v.currentTime;
     }
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
 
-  // 切換槽位邏輯：存舊 -> 換號 -> 刷UI
   function switchSlot(num, isInitial = false) {
-    if (!isInitial) syncUItoMem(); // 如果是點擊切換，先存下當前的
-    
+    if (!isInitial) syncUItoMem();
     appData.active = num;
-    
-    // 1. 更新按鈕外觀
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S' + num).classList.add('active');
-
-    // 2. 關鍵：把記憶體資料填回 UI
     const data = appData["s" + num];
     L.value = data.l || "";
-    
-    // 3. 關鍵：立即重新生成按鈕清單
     gen(); 
-
-    // 4. 載入影片進度
     if (data.u) {
       load(data.u, data.t || 0);
-    } else if (dp) {
-      dp.pause(); // 切換到空槽位時暫停
+    } else {
+      v.pause();
+      v.src = "";
     }
-    
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     if(!isInitial) showNotice("切換至 劇 " + num);
   }
 
   window.onload = () => {
     const saved = localStorage.getItem("tv_v4_data");
-    if (saved) {
-      try { appData = JSON.parse(saved); } catch(e) {}
-    }
+    if (saved) { try { appData = JSON.parse(saved); } catch(e) {} }
     switchSlot(appData.active || 1, true);
   };
 
-  // 讀取：一次抓回 3 個槽位的「大禮包」
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
@@ -134,14 +133,11 @@
     window[cbName] = (res) => {
       if (res && res.list) {
         try {
-          const cloud = JSON.parse(res.list);
-          appData = cloud; // 覆蓋整個記憶體
+          appData = JSON.parse(res.list);
           localStorage.setItem("tv_v4_data", res.list);
-          // 強制刷新當前 UI
           switchSlot(appData.active, true);
-          showNotice("✅ 雲端同步成功 (3個劇集)");
+          showNotice("✅ 雲端同步成功");
         } catch(e) {
-          // 容錯舊格式：把雲端字串塞進目前槽位
           appData["s" + appData.active].l = res.list;
           appData["s" + appData.active].u = res.url || "";
           appData["s" + appData.active].t = res.time || 0;
@@ -156,14 +152,13 @@
     d.body.appendChild(script);
   };
 
-  // 寫入：把 3 個槽位打包成一個 JSON 字串送去雲端
   BtnWrite.onclick = () => {
-    syncUItoMem(); // 確保打包前抓到最新進度
+    syncUItoMem();
     BtnWrite.innerText = "寫入中...";
     const payload = {
       list: JSON.stringify(appData),
-      url: dp ? dp.video.dataset.u : "",
-      time: dp ? dp.video.currentTime : 0
+      url: v.dataset.u || "",
+      time: v.currentTime || 0
     };
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
       .then(() => {
@@ -184,55 +179,45 @@
       b.onclick = () => { syncUItoMem(); load(u, 0); };
       C.appendChild(b);
     });
-    if (dp) hi(dp.video.dataset.u);
+    hi(v.dataset.u);
   }
 
+  // 核心修改：使用 Hls.js 驅動原生 Video 標籤
   function load(u, t) {
     hi(u);
+    v.dataset.u = u;
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
-    if (dp) {
-      dp.switchVideo({ url: freshUrl, type: 'hls' });
-      dp.video.dataset.u = u;
-      if (t > 0) dp.seek(t);
-      dp.play();
-    } else {
-      dp = new DPlayer({
-        container: d.getElementById('dplayer'),
-        autoplay: true, hotkey: true,
-        video: { url: freshUrl, type: 'hls' }
+
+    if (Hls.isSupported()) {
+      if (hls) hls.destroy(); // 銷毀舊實例
+      hls = new Hls();
+      hls.loadSource(freshUrl);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (t > 0) v.currentTime = t;
+        v.play();
       });
-      dp.video.dataset.u = u;
-      if (t > 0) dp.seek(t);
-      dp.on('ended', () => nextVideo());
-      
-      const btnBox = d.createElement('div');
-      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-      const curEp = d.createElement('div'); curEp.id = "curEp";
-      curEp.style.cssText = 'font-size:11px; color:#0a0; border:1px solid #050; padding:1px 6px; border-radius:3px; margin-top:8px; margin-right:4px; font-weight:bold;';
-      const createQuickBtn = (text, action) => {
-        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
-        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-        btn.onclick = (e) => { e.stopPropagation(); action(); };
-        return btn;
-      };
-      btnBox.appendChild(curEp);
-      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-      const ir = d.querySelector('.dplayer-icons-right');
-      if (ir) ir.insertBefore(btnBox, ir.firstChild);
+    } 
+    // 支援原生 HLS (如 iOS Safari/Brave)
+    else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = freshUrl;
+      v.addEventListener('loadedmetadata', () => {
+        if (t > 0) v.currentTime = t;
+        v.play();
+      }, { once: true });
     }
-    updateEpDisp(u); 
+    updateEpDisp(u);
   }
 
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
+    const u = v.dataset.u || "";
     const i = bs.findIndex(b => b.dataset.u === u);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   }
+
+  // 播放結束自動下一集
+  v.onended = () => nextVideo();
 
   function updateEpDisp(u) {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
@@ -250,14 +235,12 @@
     });
   }
 
-  // 內容輸入時即時存入記憶體
   L.oninput = () => { 
     appData["s" + appData.active].l = L.value; 
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     gen(); 
   };
 
-  // 定期存檔進度到記憶體
   setInterval(syncUItoMem, 3000);
 </script>
 </body>
