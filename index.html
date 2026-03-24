@@ -81,4 +81,188 @@
 
   // 同步當前 UI 到記憶體物件
   function syncUItoMem() {
-    const s = "
+    const s = "s" + appData.active;
+    appData[s].l = L.value;
+    if (dp && dp.video.dataset.u) {
+      appData[s].u = dp.video.dataset.u;
+      appData[s].t = dp.video.currentTime;
+    }
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+  }
+
+  // 切換槽位邏輯：存舊 -> 換號 -> 刷UI
+  function switchSlot(num, isInitial = false) {
+    if (!isInitial) syncUItoMem(); // 如果是點擊切換，先存下當前的
+    
+    appData.active = num;
+    
+    // 1. 更新按鈕外觀
+    d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
+    d.getElementById('S' + num).classList.add('active');
+
+    // 2. 關鍵：把記憶體資料填回 UI
+    const data = appData["s" + num];
+    L.value = data.l || "";
+    
+    // 3. 關鍵：立即重新生成按鈕清單
+    gen(); 
+
+    // 4. 載入影片進度
+    if (data.u) {
+      load(data.u, data.t || 0);
+    } else if (dp) {
+      dp.pause(); // 切換到空槽位時暫停
+    }
+    
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+    if(!isInitial) showNotice("切換至 劇 " + num);
+  }
+
+  window.onload = () => {
+    const saved = localStorage.getItem("tv_v4_data");
+    if (saved) {
+      try { appData = JSON.parse(saved); } catch(e) {}
+    }
+    switchSlot(appData.active || 1, true);
+  };
+
+  // 讀取：一次抓回 3 個槽位的「大禮包」
+  BtnRead.onclick = () => {
+    BtnRead.innerText = "讀取中...";
+    const cbName = 'jsonp_' + Date.now();
+    const script = d.createElement('script');
+    window[cbName] = (res) => {
+      if (res && res.list) {
+        try {
+          const cloud = JSON.parse(res.list);
+          appData = cloud; // 覆蓋整個記憶體
+          localStorage.setItem("tv_v4_data", res.list);
+          // 強制刷新當前 UI
+          switchSlot(appData.active, true);
+          showNotice("✅ 雲端同步成功 (3個劇集)");
+        } catch(e) {
+          // 容錯舊格式：把雲端字串塞進目前槽位
+          appData["s" + appData.active].l = res.list;
+          appData["s" + appData.active].u = res.url || "";
+          appData["s" + appData.active].t = res.time || 0;
+          switchSlot(appData.active, true);
+          showNotice("⚠️ 載入舊版清單");
+        }
+      }
+      delete window[cbName]; d.body.removeChild(script);
+      BtnRead.innerText = "讀取同步進度";
+    };
+    script.src = `${API_URL}?callback=${cbName}&t=${Date.now()}`;
+    d.body.appendChild(script);
+  };
+
+  // 寫入：把 3 個槽位打包成一個 JSON 字串送去雲端
+  BtnWrite.onclick = () => {
+    syncUItoMem(); // 確保打包前抓到最新進度
+    BtnWrite.innerText = "寫入中...";
+    const payload = {
+      list: JSON.stringify(appData),
+      url: dp ? dp.video.dataset.u : "",
+      time: dp ? dp.video.currentTime : 0
+    };
+    fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+      .then(() => {
+        showNotice("💾 雲端備份成功");
+        BtnWrite.innerText = "寫入同步進度";
+      });
+  };
+
+  T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
+
+  function gen() {
+    const lines = L.value.split('\n').filter(l => l.includes('http'));
+    C.innerHTML = '';
+    lines.forEach((l, i) => {
+      const u = l.split('$').pop().trim();
+      const b = d.createElement("button");
+      b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
+      b.onclick = () => { syncUItoMem(); load(u, 0); };
+      C.appendChild(b);
+    });
+    if (dp) hi(dp.video.dataset.u);
+  }
+
+  function load(u, t) {
+    hi(u);
+    const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
+    if (dp) {
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.play();
+    } else {
+      dp = new DPlayer({
+        container: d.getElementById('dplayer'),
+        autoplay: true, hotkey: true,
+        video: { url: freshUrl, type: 'hls' }
+      });
+      dp.video.dataset.u = u;
+      if (t > 0) dp.seek(t);
+      dp.on('ended', () => nextVideo());
+      
+      const btnBox = d.createElement('div');
+      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+      const curEp = d.createElement('div'); curEp.id = "curEp";
+      
+      // *** 僅修改此處樣式：放大字體、亮綠色、移除邊框 ***
+      curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:4px; font-weight:bold;';
+      
+      const createQuickBtn = (text, action) => {
+        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
+        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); action(); };
+        return btn;
+      };
+      btnBox.appendChild(curEp);
+      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+      const ir = d.querySelector('.dplayer-icons-right');
+      if (ir) ir.insertBefore(btnBox, ir.firstChild);
+    }
+    updateEpDisp(u); 
+  }
+
+  function nextVideo() {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const u = dp ? dp.video.dataset.u : "";
+    const i = bs.findIndex(b => b.dataset.u === u);
+    if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
+  }
+
+  function updateEpDisp(u) {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const i = bs.findIndex(b => b.dataset.u === u);
+    const el = d.getElementById("curEp");
+    // *** 僅修改此處內容：改為純數字顯示 ***
+    if (el) el.innerText = i !== -1 ? (i + 1) : "";
+  }
+
+  function hi(u) {
+    updateEpDisp(u);
+    d.querySelectorAll(".btn-num").forEach(b => {
+      const a = b.dataset.u === u;
+      b.style.background = a ? "#0f0" : "#222";
+      b.style.color = a ? "#000" : "#fff";
+    });
+  }
+
+  // 內容輸入時即時存入記憶體
+  L.oninput = () => { 
+    appData["s" + appData.active].l = L.value; 
+    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
+    gen(); 
+  };
+
+  // 定期存檔進度到記憶體
+  setInterval(syncUItoMem, 3000);
+</script>
+</body>
+</html>
