@@ -64,7 +64,6 @@
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
   let dp = null;
 
-  // 核心資料物件
   let appData = {
     active: 1,
     s1: { l: "", u: "", t: 0 },
@@ -79,42 +78,36 @@
     setTimeout(() => { NT.style.display = 'none'; }, 1000);
   }
 
-  // 同步當前 UI 到記憶體物件
-  function syncUItoMem() {
+  // 修改：同步到記憶體但不寫入 localStorage
+  function syncMemOnly() {
     const s = "s" + appData.active;
     appData[s].l = L.value;
     if (dp && dp.video.dataset.u) {
       appData[s].u = dp.video.dataset.u;
       appData[s].t = dp.video.currentTime;
     }
+  }
+
+  // 修改：只有點擊「寫入」才執行儲存
+  function manualSave() {
+    syncMemOnly();
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
 
-  // 切換槽位邏輯：存舊 -> 換號 -> 刷UI
   function switchSlot(num, isInitial = false) {
-    if (!isInitial) syncUItoMem(); // 如果是點擊切換，先存下當前的
-    
     appData.active = num;
-    
-    // 1. 更新按鈕外觀
     d.querySelectorAll('.btn-slot').forEach(b => b.classList.remove('active'));
     d.getElementById('S' + num).classList.add('active');
 
-    // 2. 關鍵：把記憶體資料填回 UI
     const data = appData["s" + num];
     L.value = data.l || "";
-    
-    // 3. 關鍵：立即重新生成按鈕清單
     gen(); 
 
-    // 4. 載入影片進度
     if (data.u) {
       load(data.u, data.t || 0);
     } else if (dp) {
-      dp.pause(); // 切換到空槽位時暫停
+      dp.pause();
     }
-    
-    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     if(!isInitial) showNotice("切換至 劇 " + num);
   }
 
@@ -126,7 +119,6 @@
     switchSlot(appData.active || 1, true);
   };
 
-  // 讀取：一次抓回 3 個槽位的「大禮包」
   BtnRead.onclick = () => {
     BtnRead.innerText = "讀取中...";
     const cbName = 'jsonp_' + Date.now();
@@ -135,13 +127,11 @@
       if (res && res.list) {
         try {
           const cloud = JSON.parse(res.list);
-          appData = cloud; // 覆蓋整個記憶體
+          appData = cloud;
           localStorage.setItem("tv_v4_data", res.list);
-          // 強制刷新當前 UI
           switchSlot(appData.active, true);
-          showNotice("✅ 雲端同步成功 (3個劇集)");
+          showNotice("✅ 雲端同步成功");
         } catch(e) {
-          // 容錯舊格式：把雲端字串塞進目前槽位
           appData["s" + appData.active].l = res.list;
           appData["s" + appData.active].u = res.url || "";
           appData["s" + appData.active].t = res.time || 0;
@@ -156,9 +146,8 @@
     d.body.appendChild(script);
   };
 
-  // 寫入：把 3 個槽位打包成一個 JSON 字串送去雲端
   BtnWrite.onclick = () => {
-    syncUItoMem(); // 確保打包前抓到最新進度
+    manualSave(); // 改為手動存檔
     BtnWrite.innerText = "寫入中...";
     const payload = {
       list: JSON.stringify(appData),
@@ -181,7 +170,7 @@
       const u = l.split('$').pop().trim();
       const b = d.createElement("button");
       b.className = "btn-num"; b.innerText = (i + 1); b.dataset.u = u;
-      b.onclick = () => { syncUItoMem(); load(u, 0); };
+      b.onclick = () => { load(u, 0); };
       C.appendChild(b);
     });
     if (dp) hi(dp.video.dataset.u);
@@ -208,8 +197,6 @@
       const btnBox = d.createElement('div');
       btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
       const curEp = d.createElement('div'); curEp.id = "curEp";
-      
-      // *** 僅修改此處樣式：放大字體、亮綠色、移除邊框 ***
       curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:4px; font-weight:bold;';
       
       const createQuickBtn = (text, action) => {
@@ -241,7 +228,6 @@
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === u);
     const el = d.getElementById("curEp");
-    // *** 僅修改此處內容：改為純數字顯示 ***
     if (el) el.innerText = i !== -1 ? (i + 1) : "";
   }
 
@@ -254,15 +240,13 @@
     });
   }
 
-  // 內容輸入時即時存入記憶體
+  // 修改：輸入時僅更新記憶體，不儲存 localStorage
   L.oninput = () => { 
     appData["s" + appData.active].l = L.value; 
-    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     gen(); 
   };
 
-  // 定期存檔進度到記憶體
-  setInterval(syncUItoMem, 3000);
+  // 修改：徹底移除 setInterval(syncUItoMem, 3000)
 </script>
 </body>
 </html>
