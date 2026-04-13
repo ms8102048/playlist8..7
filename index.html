@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3 - Share順暢版</title>
+  <title>Git播放器 - 極速Share版</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -20,8 +20,8 @@
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
-    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; }
-    .dplayer-icons-right { display: flex !important; align-items: center; }
+    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; overflow: hidden; }
+    iframe { width: 100%; height: 100%; border: none; }
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
       background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
@@ -52,11 +52,12 @@
 
 <div id="dplayer"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
-  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
+  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), DP_DIV = d.getElementById("dplayer");
   let dp = null;
+  let currentUrl = "";
 
   let appData = {
     active: 1,
@@ -75,10 +76,8 @@
   function syncUItoMem() {
     const s = "s" + appData.active;
     appData[s].l = L.value;
-    if (dp && dp.video.dataset.u) {
-      appData[s].u = dp.video.dataset.u;
-      appData[s].t = dp.video.currentTime;
-    }
+    appData[s].u = currentUrl;
+    if (dp) appData[s].t = dp.video.currentTime;
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
 
@@ -91,7 +90,7 @@
     L.value = data.l || "";
     gen(); 
     if (data.u) load(data.u, data.t || 0);
-    else if (dp) dp.pause();
+    else DP_DIV.innerHTML = "";
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     if(!isInitial) showNotice("切換至 劇 " + num);
   }
@@ -109,16 +108,11 @@
     window[cbName] = (res) => {
       if (res && res.list) {
         try {
-          const cloud = JSON.parse(res.list);
-          appData = cloud;
+          appData = JSON.parse(res.list);
           localStorage.setItem("tv_v4_data", res.list);
           switchSlot(appData.active, true);
           showNotice("✅ 雲端同步成功");
-        } catch(e) {
-          appData["s" + appData.active].l = res.list;
-          switchSlot(appData.active, true);
-          showNotice("⚠️ 載入舊版清單");
-        }
+        } catch(e) { showNotice("⚠️ 資料格式錯誤"); }
       }
       delete window[cbName]; d.body.removeChild(script);
       BtnRead.innerText = "讀取同步進度";
@@ -130,12 +124,9 @@
   BtnWrite.onclick = () => {
     syncUItoMem();
     BtnWrite.innerText = "寫入中...";
-    const payload = { list: JSON.stringify(appData), url: dp ? dp.video.dataset.u : "", time: dp ? dp.video.currentTime : 0 };
+    const payload = { list: JSON.stringify(appData) };
     fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-      .then(() => {
-        showNotice("💾 雲端備份成功");
-        BtnWrite.innerText = "寫入同步進度";
-      });
+      .then(() => { showNotice("💾 雲端備份成功"); BtnWrite.innerText = "寫入同步進度"; });
   };
 
   T.onclick = () => UI.style.display = UI.style.display === 'none' ? 'block' : 'none';
@@ -150,68 +141,34 @@
       b.onclick = () => { syncUItoMem(); load(u, 0); };
       C.appendChild(b);
     });
-    if (dp) hi(dp.video.dataset.u);
+    hi(currentUrl);
   }
 
   function load(u, t) {
+    currentUrl = u;
     hi(u);
-    // 這裡維持原有的 URL 處理，但將 type 改為 'normal' 以啟用原生強力緩衝
-    const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
-    if (dp) {
-      // 關鍵：type 改為 normal
-      dp.switchVideo({ url: freshUrl, type: 'normal' });
-      dp.video.dataset.u = u;
-      if (t > 0) dp.seek(t);
-      dp.play();
+    if (u.includes('/share/')) {
+      // 模式 A: Share 嵌入模式 (最強預載)
+      if (dp) { dp.destroy(); dp = null; }
+      DP_DIV.innerHTML = `<iframe src="${u}" allowfullscreen="true" allow="autoplay; encrypted-media"></iframe>`;
     } else {
+      // 模式 B: DPlayer 模式 (支援精確秒數)
+      DP_DIV.innerHTML = "";
       dp = new DPlayer({
-        container: d.getElementById('dplayer'),
-        autoplay: true, hotkey: true,
-        video: { url: freshUrl, type: 'normal' } // 關鍵：使用原生模式
+        container: DP_DIV, autoplay: true, video: { url: u, type: 'auto' }
       });
-      dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       dp.on('ended', () => nextVideo());
-      
-      const btnBox = d.createElement('div');
-      btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
-      const curEp = d.createElement('div'); curEp.id = "curEp";
-      curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:4px; font-weight:bold;';
-      
-      const createQuickBtn = (text, action) => {
-        const btn = d.createElement('div'); btn.className = 'dplayer-icon';
-        btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-        btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
-        btn.onclick = (e) => { e.stopPropagation(); action(); };
-        return btn;
-      };
-      btnBox.appendChild(curEp);
-      btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-      btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-      btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-      btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
-      const ir = d.querySelector('.dplayer-icons-right');
-      if (ir) ir.insertBefore(btnBox, ir.firstChild);
     }
-    updateEpDisp(u); 
   }
 
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const u = dp ? dp.video.dataset.u : "";
-    const i = bs.findIndex(b => b.dataset.u === u);
+    const i = bs.findIndex(b => b.dataset.u === currentUrl);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
   }
 
-  function updateEpDisp(u) {
-    const bs = Array.from(d.querySelectorAll(".btn-num"));
-    const i = bs.findIndex(b => b.dataset.u === u);
-    const el = d.getElementById("curEp");
-    if (el) el.innerText = i !== -1 ? (i + 1) : "";
-  }
-
   function hi(u) {
-    updateEpDisp(u);
     d.querySelectorAll(".btn-num").forEach(b => {
       const a = b.dataset.u === u;
       b.style.background = a ? "#0f0" : "#222";
@@ -219,14 +176,8 @@
     });
   }
 
-  L.oninput = () => { 
-    appData["s" + appData.active].l = L.value; 
-    localStorage.setItem("tv_v4_data", JSON.stringify(appData));
-    gen(); 
-  };
-
-  // 每 3 秒自動同步一次進度，確保關閉前狀態被記錄
-  setInterval(syncUItoMem, 3000);
+  L.oninput = () => { gen(); syncUItoMem(); };
+  setInterval(syncUItoMem, 5000);
 </script>
 </body>
 </html>
