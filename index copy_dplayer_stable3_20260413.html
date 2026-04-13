@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器3 - Share順暢版</title>
+  <title>Git播放器3</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -52,6 +52,7 @@
 
 <div id="dplayer"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
@@ -155,11 +156,9 @@
 
   function load(u, t) {
     hi(u);
-    // 這裡維持原有的 URL 處理，但將 type 改為 'normal' 以啟用原生強力緩衝
     const freshUrl = u.includes('?') ? `${u}&v=${Date.now()}` : `${u}?v=${Date.now()}`;
     if (dp) {
-      // 關鍵：type 改為 normal
-      dp.switchVideo({ url: freshUrl, type: 'normal' });
+      dp.switchVideo({ url: freshUrl, type: 'hls' });
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
       dp.play();
@@ -167,7 +166,7 @@
       dp = new DPlayer({
         container: d.getElementById('dplayer'),
         autoplay: true, hotkey: true,
-        video: { url: freshUrl, type: 'normal' } // 關鍵：使用原生模式
+        video: { url: freshUrl, type: 'hls' }
       });
       dp.video.dataset.u = u;
       if (t > 0) dp.seek(t);
@@ -176,6 +175,8 @@
       const btnBox = d.createElement('div');
       btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
       const curEp = d.createElement('div'); curEp.id = "curEp";
+      
+      // *** 使用大字體、亮綠色、純數字顯示 ***
       curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:4px; font-weight:bold;';
       
       const createQuickBtn = (text, action) => {
@@ -207,6 +208,7 @@
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === u);
     const el = d.getElementById("curEp");
+    // 改為純數字顯示
     if (el) el.innerText = i !== -1 ? (i + 1) : "";
   }
 
@@ -225,7 +227,6 @@
     gen(); 
   };
 
-  // 每 3 秒自動同步一次進度，確保關閉前狀態被記錄
   setInterval(syncUItoMem, 3000);
 </script>
 </body>
