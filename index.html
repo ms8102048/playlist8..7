@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器Share</title>
+  <title>Git播放器</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -21,7 +21,8 @@
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
     #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; overflow: hidden; position: relative; }
-    iframe { width: 100%; height: 100%; border: none; position: absolute; top:0; left:0; }
+    iframe { width: 100%; height: 100%; border: none; }
+    .dplayer-icons-right { display: flex !important; align-items: center; }
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
       background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
@@ -58,8 +59,7 @@
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), DP_DIV = d.getElementById("dplayer");
-  let dp = null;
-  let currentUrl = "";
+  let dp = null, currentUrl = "";
 
   let appData = {
     active: 1,
@@ -155,11 +155,9 @@
     const isShare = u.includes('/share/');
 
     if (isShare) {
-      // 模式 A: Share 嵌入模式 (最強緩衝)
       if (dp) { dp.destroy(); dp = null; }
       DP_DIV.innerHTML = `<iframe src="${u}" allowfullscreen="true" allow="autoplay; encrypted-media"></iframe>`;
     } else {
-      // 模式 B: 直連資源 (DPlayer)
       DP_DIV.innerHTML = "";
       dp = new DPlayer({
         container: DP_DIV,
@@ -168,29 +166,27 @@
           url: u,
           type: isM3U8 ? 'hls' : 'normal',
           hlsConfig: isM3U8 ? {
-            maxBufferLength: 120,      // 暴力緩衝 120 秒
+            maxBufferLength: 120,
             maxMaxBufferLength: 300,
-            enableWorker: true,        // 多線程
-            startLevel: -1             // 自動最高畫質
+            enableWorker: true,
+            startLevel: -1
           } : null
         }
       });
       if (t > 0) dp.seek(t);
       dp.on('ended', () => nextVideo());
-      
-      // 添加自定義控制按鈕 (⏩ ↩️ 等)
-      setupCustomControls();
+      addDPlayerExtras(); // 重新添加豪華按鈕與大字體
     }
     updateEpDisp(u);
   }
 
-  function setupCustomControls() {
+  function addDPlayerExtras() {
     const btnBox = d.createElement('div');
     btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
     const curEp = d.createElement('div'); curEp.id = "curEp";
     curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:4px; font-weight:bold;';
     
-    const createQuickBtn = (text, action) => {
+    const createBtn = (text, action) => {
       const btn = d.createElement('div'); btn.className = 'dplayer-icon';
       btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
       btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
@@ -198,10 +194,11 @@
       return btn;
     };
     btnBox.appendChild(curEp);
-    btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
-    btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
-    btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
-    btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+    btnBox.appendChild(createBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+    btnBox.appendChild(createBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+    btnBox.appendChild(createBtn('↩️', () => { dp.seek(85); }));
+    btnBox.appendChild(createBtn('⏭️', () => { nextVideo(); }));
+    
     const ir = d.querySelector('.dplayer-icons-right');
     if (ir) ir.insertBefore(btnBox, ir.firstChild);
     updateEpDisp(currentUrl);
@@ -229,7 +226,7 @@
   }
 
   L.oninput = () => { gen(); syncUItoMem(); };
-  setInterval(syncUItoMem, 5000); // 5秒存一次進度
+  setInterval(syncUItoMem, 5000);
 </script>
 </body>
 </html>
