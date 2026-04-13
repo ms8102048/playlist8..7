@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器 - 極速Share版</title>
+  <title>Git播放器Share</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -20,8 +20,8 @@
     .btn-ctrl { background: #444; color: #fff; }
     #BtnRead { background: #1a3a5a; color: #8cf; border: 1px solid #2d5a88; }
     #BtnWrite { background: #1a5a2a; color: #8f8; border: 1px solid #2d884a; }
-    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; overflow: hidden; }
-    iframe { width: 100%; height: 100%; border: none; }
+    #dplayer { width: 100%; min-height: 380px; aspect-ratio: 16/9; background: #000; border-radius: 4px; overflow: hidden; position: relative; }
+    iframe { width: 100%; height: 100%; border: none; position: absolute; top:0; left:0; }
     #AutoNotice { 
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
       background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
@@ -52,7 +52,9 @@
 
 <div id="dplayer"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@latest"></script>
+
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), DP_DIV = d.getElementById("dplayer");
@@ -77,7 +79,9 @@
     const s = "s" + appData.active;
     appData[s].l = L.value;
     appData[s].u = currentUrl;
-    if (dp) appData[s].t = dp.video.currentTime;
+    if (dp && !currentUrl.includes('/share/')) {
+        appData[s].t = dp.video.currentTime;
+    }
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
   }
 
@@ -147,25 +151,73 @@
   function load(u, t) {
     currentUrl = u;
     hi(u);
-    if (u.includes('/share/')) {
-      // 模式 A: Share 嵌入模式 (最強預載)
+    const isM3U8 = u.toLowerCase().includes('m3u8');
+    const isShare = u.includes('/share/');
+
+    if (isShare) {
+      // 模式 A: Share 嵌入模式 (最強緩衝)
       if (dp) { dp.destroy(); dp = null; }
       DP_DIV.innerHTML = `<iframe src="${u}" allowfullscreen="true" allow="autoplay; encrypted-media"></iframe>`;
     } else {
-      // 模式 B: DPlayer 模式 (支援精確秒數)
+      // 模式 B: 直連資源 (DPlayer)
       DP_DIV.innerHTML = "";
       dp = new DPlayer({
-        container: DP_DIV, autoplay: true, video: { url: u, type: 'auto' }
+        container: DP_DIV,
+        autoplay: true,
+        video: {
+          url: u,
+          type: isM3U8 ? 'hls' : 'normal',
+          hlsConfig: isM3U8 ? {
+            maxBufferLength: 120,      // 暴力緩衝 120 秒
+            maxMaxBufferLength: 300,
+            enableWorker: true,        // 多線程
+            startLevel: -1             // 自動最高畫質
+          } : null
+        }
       });
       if (t > 0) dp.seek(t);
       dp.on('ended', () => nextVideo());
+      
+      // 添加自定義控制按鈕 (⏩ ↩️ 等)
+      setupCustomControls();
     }
+    updateEpDisp(u);
+  }
+
+  function setupCustomControls() {
+    const btnBox = d.createElement('div');
+    btnBox.style.cssText = 'display:flex; align-items:center; gap:12px; margin-right:8px;';
+    const curEp = d.createElement('div'); curEp.id = "curEp";
+    curEp.style.cssText = 'font-size:26px; color:#0f0; margin-top:5px; margin-right:4px; font-weight:bold;';
+    
+    const createQuickBtn = (text, action) => {
+      const btn = d.createElement('div'); btn.className = 'dplayer-icon';
+      btn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
+      btn.innerHTML = `<div style="font-size:18px; line-height:1; margin-top:5px;">${text}</div>`;
+      btn.onclick = (e) => { e.stopPropagation(); action(); };
+      return btn;
+    };
+    btnBox.appendChild(curEp);
+    btnBox.appendChild(createQuickBtn('⏪', () => { dp.seek(dp.video.currentTime - 10); }));
+    btnBox.appendChild(createQuickBtn('⏩', () => { dp.seek(dp.video.currentTime + 10); }));
+    btnBox.appendChild(createQuickBtn('↩️', () => { dp.seek(85); }));
+    btnBox.appendChild(createQuickBtn('⏭️', () => { nextVideo(); }));
+    const ir = d.querySelector('.dplayer-icons-right');
+    if (ir) ir.insertBefore(btnBox, ir.firstChild);
+    updateEpDisp(currentUrl);
   }
 
   function nextVideo() {
     const bs = Array.from(d.querySelectorAll(".btn-num"));
     const i = bs.findIndex(b => b.dataset.u === currentUrl);
     if (i !== -1 && i < bs.length - 1) bs[i + 1].click();
+  }
+
+  function updateEpDisp(u) {
+    const bs = Array.from(d.querySelectorAll(".btn-num"));
+    const i = bs.findIndex(b => b.dataset.u === u);
+    const el = d.getElementById("curEp");
+    if (el) el.innerText = i !== -1 ? (i + 1) : "";
   }
 
   function hi(u) {
@@ -177,7 +229,7 @@
   }
 
   L.oninput = () => { gen(); syncUItoMem(); };
-  setInterval(syncUItoMem, 5000);
+  setInterval(syncUItoMem, 5000); // 5秒存一次進度
 </script>
 </body>
 </html>
