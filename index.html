@@ -166,12 +166,13 @@
           url: u,
           type: isM3U8 ? 'hls' : 'normal',
           hlsConfig: isM3U8 ? {
-            // --- 強化緩衝模式 ---
-            maxBufferLength: 300,        // 預載 300 秒 (5分鐘)
-            maxMaxBufferLength: 450,     // 最大緩衝極限
-            maxBufferSize: 120 * 1024 * 1024, // 容許約 120MB 的記憶體佔用
-            enableWorker: true,
-            startLevel: -1               // 自動最高畫質
+            maxBufferLength: 300,
+            maxMaxBufferLength: 450,
+            maxBufferSize: 120 * 1024 * 1024,
+            // --- 額外補強 ---
+            nudgeMaxRetries: 5,        // 遇到卡頓時強制重試
+            testBandwidth: true,      // 啟動時即測試最大頻寬
+            lowLatencyMode: false,    // 關閉低延遲模式，換取更長的預載
           } : null
         }
       });
