@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器</title>
+  <title>Git播放器cache</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -166,16 +166,18 @@
           url: u,
           type: isM3U8 ? 'hls' : 'normal',
           hlsConfig: isM3U8 ? {
-            maxBufferLength: 120,
-            maxMaxBufferLength: 300,
+            // --- 強化緩衝模式 ---
+            maxBufferLength: 300,        // 預載 300 秒 (5分鐘)
+            maxMaxBufferLength: 450,     // 最大緩衝極限
+            maxBufferSize: 120 * 1024 * 1024, // 容許約 120MB 的記憶體佔用
             enableWorker: true,
-            startLevel: -1
+            startLevel: -1               // 自動最高畫質
           } : null
         }
       });
       if (t > 0) dp.seek(t);
       dp.on('ended', () => nextVideo());
-      addDPlayerExtras(); // 重新添加豪華按鈕與大字體
+      addDPlayerExtras(); 
     }
     updateEpDisp(u);
   }
