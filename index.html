@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器 - 260904</title>
+  <title>Git播放器</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -58,7 +58,8 @@
 
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
-  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), DP_DIV = d.getElementById("dplayer");
+  const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite");
+  const DP_DIV = d.getElementById("dplayer");
   let dp = null, currentUrl = "";
 
   let appData = {
@@ -94,41 +95,22 @@
     L.value = data.l || "";
     gen(); 
     if (data.u) load(data.u, data.t || 0);
-    else {
-      destroyPlayer();
-      DP_DIV.innerHTML = "";
-    }
+    else DP_DIV.innerHTML = "";
     localStorage.setItem("tv_v4_data", JSON.stringify(appData));
     if(!isInitial) showNotice("切換至 劇 " + num);
   }
 
-  // ★★★ 核心修改：徹底銷毀播放器，重建 DOM ★★★
+  // ★★★ 關鍵修正1：正確銷毀播放器 ★★★
   function destroyPlayer() {
     if (dp) {
       try {
-        // 暫停所有播放
-        if (dp.video) dp.video.pause();
-        // 移除所有事件監聽
         dp.destroy();
       } catch(e) {}
       dp = null;
     }
-    
-    // ★★★ 關鍵：重建 #dplayer 的 DOM，清除所有殘留的 buffer ★★★
-    const parent = DP_DIV.parentNode;
-    const newDiv = d.createElement('div');
-    newDiv.id = 'dplayer';
-    newDiv.style.cssText = 'width:100%; min-height:380px; aspect-ratio:16/9; background:#000; border-radius:4px; overflow:hidden; position:relative;';
-    parent.replaceChild(newDiv, DP_DIV);
-    // 更新全域變數指向新元素
-    DP_DIV = newDiv;
-    
-    // 強制垃圾回收（提示瀏覽器）
-    if (window.gc) window.gc();
+    // 清空容器
+    DP_DIV.innerHTML = "";
   }
-
-  // 重新定義 DP_DIV 為可變
-  let DP_DIV = d.getElementById("dplayer");
 
   window.onload = () => {
     const saved = localStorage.getItem("tv_v4_data");
@@ -179,71 +161,81 @@
     hi(currentUrl);
   }
 
-  // ★★★ 核心修改：全新的 load 函數 ★★★
+  // ★★★ 關鍵修正2：改良的 load 函數 ★★★
   function load(u, t) {
+    // 先銷毀舊播放器
+    destroyPlayer();
+    
     currentUrl = u;
     hi(u);
     const isM3U8 = u.toLowerCase().includes('m3u8');
     const isShare = u.includes('/share/');
 
     if (isShare) {
-      destroyPlayer();
       DP_DIV.innerHTML = `<iframe src="${u}" allowfullscreen="true" allow="autoplay; encrypted-media"></iframe>`;
       updateEpDisp(u);
       return;
     }
 
-    // ★★★ 每次載入都完全重建播放器 ★★★
-    destroyPlayer();
-    
-    // 確保新元素存在
-    if (!DP_DIV || DP_DIV.id !== 'dplayer') {
-      const parent = d.getElementById('dplayer')?.parentNode || document.body;
-      const newDiv = d.createElement('div');
-      newDiv.id = 'dplayer';
-      newDiv.style.cssText = 'width:100%; min-height:380px; aspect-ratio:16/9; background:#000; border-radius:4px; overflow:hidden; position:relative;';
-      parent.appendChild(newDiv);
-      DP_DIV = newDiv;
-    }
-
-    // 加上隨機參數強制刷新
+    // ★★★ 關鍵修正3：加入時間戳記破壞快取 ★★★
     let finalUrl = u;
     if (isM3U8) {
       const separator = u.includes('?') ? '&' : '?';
       finalUrl = u + separator + '_t=' + Date.now();
     }
 
-    // 建立全新的 DPlayer
+    // ★★★ 關鍵修正4：優化的 HLS 配置 ★★★
+    const hlsConfig = isM3U8 ? {
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      enableWorker: true,
+      startLevel: -1,
+      // 完全關閉快取
+      cacheEncryptionKeys: false,
+      // 重試設定
+      fragLoadMaxRetry: 5,
+      manifestLoadMaxRetry: 5,
+      levelLoadMaxRetry: 5,
+      // 超時設定
+      fragLoadingTimeOut: 30000,
+      manifestLoadingTimeOut: 30000,
+      levelLoadingTimeOut: 30000,
+      // ★★★ 關鍵：禁用瀏覽器快取 ★★★
+      xhrSetup: function(xhr, url) {
+        xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        xhr.setRequestHeader('Pragma', 'no-cache');
+        xhr.setRequestHeader('Expires', '0');
+      }
+    } : null;
+
+    // 建立新播放器
     dp = new DPlayer({
       container: DP_DIV,
       autoplay: true,
       video: {
         url: finalUrl,
         type: isM3U8 ? 'hls' : 'normal',
-        hlsConfig: isM3U8 ? {
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          enableWorker: true,
-          startLevel: -1,
-          // ★★★ 關閉快取 ★★★
-          cacheEncryptionKeys: false,
-          // 重試設定
-          fragLoadMaxRetry: 3,
-          manifestLoadMaxRetry: 3,
-          levelLoadMaxRetry: 3,
-          // ★★★ 關鍵：每次跳轉都重新載入 ★★★
-          fragLoadingTimeOut: 20000,
-          manifestLoadingTimeOut: 20000,
-          levelLoadingTimeOut: 20000,
-        } : null
+        hlsConfig: hlsConfig
       }
     });
 
-    // ★★★ 跳轉後自動重新整理 buffer ★★★
+    // ★★★ 關鍵修正5：HLS 錯誤自動恢復 ★★★
     if (isM3U8 && dp.hls) {
-      dp.hls.on(dp.hls.Event.FRAG_LOADING, () => {
-        // 當載入新片段時，清除舊 buffer
-        if (dp.hls) {
+      dp.hls.on(dp.hls.Event.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.warn('HLS 錯誤，嘗試恢復...');
+          setTimeout(() => {
+            if (dp && dp.hls) {
+              dp.hls.recoverMediaError();
+            }
+          }, 500);
+        }
+      });
+      
+      // ★★★ 關鍵修正6：片段載入失敗時重試 ★★★
+      dp.hls.on(dp.hls.Event.FRAG_LOAD_ERROR, () => {
+        console.warn('片段載入失敗，重新請求');
+        if (dp && dp.hls) {
           dp.hls.trigger(dp.hls.Event.BUFFER_RESET);
         }
       });
@@ -253,7 +245,7 @@
     if (t > 0) {
       setTimeout(() => {
         if (dp) dp.seek(t);
-      }, 300);
+      }, 500);
     }
     
     dp.on('ended', () => nextVideo());
@@ -275,18 +267,10 @@
       return btn;
     };
     btnBox.appendChild(curEp);
-    btnBox.appendChild(createBtn('⏪', () => { 
-      if (dp) dp.seek(Math.max(0, dp.video.currentTime - 10)); 
-    }));
-    btnBox.appendChild(createBtn('⏩', () => { 
-      if (dp) dp.seek(Math.min(dp.video.duration || 0, dp.video.currentTime + 10)); 
-    }));
-    btnBox.appendChild(createBtn('↩️', () => { 
-      if (dp) dp.seek(85); 
-    }));
-    btnBox.appendChild(createBtn('⏭️', () => { 
-      nextVideo(); 
-    }));
+    btnBox.appendChild(createBtn('⏪', () => { if (dp) dp.seek(dp.video.currentTime - 10); }));
+    btnBox.appendChild(createBtn('⏩', () => { if (dp) dp.seek(dp.video.currentTime + 10); }));
+    btnBox.appendChild(createBtn('↩️', () => { if (dp) dp.seek(85); }));
+    btnBox.appendChild(createBtn('⏭️', () => { nextVideo(); }));
     
     const ir = d.querySelector('.dplayer-icons-right');
     if (ir) ir.insertBefore(btnBox, ir.firstChild);
