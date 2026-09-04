@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"> 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Git播放器 - 快取優化版</title>
+  <title>Git播放器 - 260904</title>
   <link rel="icon" href="video-player-icon.jpg" type="image/jpeg">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
   <style>
@@ -28,16 +28,6 @@
       background: rgba(0, 128, 0, 0.9); color: white; padding: 10px 20px;
       border-radius: 20px; z-index: 9999; display: none; font-weight: bold;
     }
-    .cache-clear-btn {
-      background: #ff4444;
-      color: white;
-      border: none;
-      padding: 5px 15px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      margin-left: 10px;
-    }
   </style>
 </head>
 <body>
@@ -59,7 +49,6 @@
   <button id="T" class="btn-ctrl">展開/收合</button>
   <button id="BtnRead" class="btn-ctrl">讀取同步進度</button>
   <button id="BtnWrite" class="btn-ctrl">寫入同步進度</button>
-  <button id="clearCache" class="btn-ctrl" style="background:#ff4444;color:#fff;">清除HLS快取</button>
 </div>
 
 <div id="dplayer"></div>
@@ -70,7 +59,7 @@
 <script>
   const d = document, L = d.getElementById("L"), C = d.getElementById("C"), UI = d.getElementById("UI"), T = d.getElementById("T"), NT = d.getElementById("AutoNotice");
   const BtnRead = d.getElementById("BtnRead"), BtnWrite = d.getElementById("BtnWrite"), DP_DIV = d.getElementById("dplayer");
-  let dp = null, currentUrl = "", hlsInstance = null;
+  let dp = null, currentUrl = "";
 
   let appData = {
     active: 1,
@@ -113,39 +102,33 @@
     if(!isInitial) showNotice("切換至 劇 " + num);
   }
 
-  // 徹底銷毀播放器
+  // ★★★ 核心修改：徹底銷毀播放器，重建 DOM ★★★
   function destroyPlayer() {
     if (dp) {
       try {
+        // 暫停所有播放
+        if (dp.video) dp.video.pause();
+        // 移除所有事件監聽
         dp.destroy();
       } catch(e) {}
       dp = null;
     }
-    if (hlsInstance) {
-      try {
-        hlsInstance.destroy();
-      } catch(e) {}
-      hlsInstance = null;
-    }
+    
+    // ★★★ 關鍵：重建 #dplayer 的 DOM，清除所有殘留的 buffer ★★★
+    const parent = DP_DIV.parentNode;
+    const newDiv = d.createElement('div');
+    newDiv.id = 'dplayer';
+    newDiv.style.cssText = 'width:100%; min-height:380px; aspect-ratio:16/9; background:#000; border-radius:4px; overflow:hidden; position:relative;';
+    parent.replaceChild(newDiv, DP_DIV);
+    // 更新全域變數指向新元素
+    DP_DIV = newDiv;
+    
+    // 強制垃圾回收（提示瀏覽器）
+    if (window.gc) window.gc();
   }
 
-  // 清除 HLS 快取
-  function clearHLSCache() {
-    if (hlsInstance) {
-      try {
-        // 清除所有快取區塊
-        hlsInstance.trigger(hlsInstance.Event.BUFFER_RESET);
-        // 重新載入
-        hlsInstance.trigger(hlsInstance.Event.MANIFEST_PARSED);
-      } catch(e) {
-        console.log('快取清除失敗', e);
-      }
-    }
-    showNotice("🗑️ HLS 快取已清除");
-  }
-
-  // 手動清除快取按鈕
-  document.getElementById('clearCache').addEventListener('click', clearHLSCache);
+  // 重新定義 DP_DIV 為可變
+  let DP_DIV = d.getElementById("dplayer");
 
   window.onload = () => {
     const saved = localStorage.getItem("tv_v4_data");
@@ -196,7 +179,7 @@
     hi(currentUrl);
   }
 
-  // 修改後的 load 函數 - 加入快取破壞機制
+  // ★★★ 核心修改：全新的 load 函數 ★★★
   function load(u, t) {
     currentUrl = u;
     hi(u);
@@ -206,73 +189,75 @@
     if (isShare) {
       destroyPlayer();
       DP_DIV.innerHTML = `<iframe src="${u}" allowfullscreen="true" allow="autoplay; encrypted-media"></iframe>`;
-    } else {
-      // 清除舊播放器
-      destroyPlayer();
-      DP_DIV.innerHTML = "";
-      
-      // ★ 關鍵修改：為 M3U8 加入時間戳記破壞快取
-      let finalUrl = u;
-      if (isM3U8) {
-        const separator = u.includes('?') ? '&' : '?';
-        finalUrl = u + separator + '_t=' + Date.now();
-        console.log('🔄 M3U8 加入時間戳記:', finalUrl);
-      }
+      updateEpDisp(u);
+      return;
+    }
 
-      // 建立 DPlayer
-      dp = new DPlayer({
-        container: DP_DIV,
-        autoplay: true,
-        video: {
-          url: finalUrl,
-          type: isM3U8 ? 'hls' : 'normal',
-          hlsConfig: isM3U8 ? {
-            maxBufferLength: 60,
-            maxMaxBufferLength: 120,
-            enableWorker: true,
-            startLevel: -1,
-            // ★ 關鍵修改：強制不使用快取
-            cacheEncryptionKeys: false,
-            // 錯誤重試機制
-            fragLoadMaxRetry: 5,
-            manifestLoadMaxRetry: 5,
-            levelLoadMaxRetry: 5
-          } : null
+    // ★★★ 每次載入都完全重建播放器 ★★★
+    destroyPlayer();
+    
+    // 確保新元素存在
+    if (!DP_DIV || DP_DIV.id !== 'dplayer') {
+      const parent = d.getElementById('dplayer')?.parentNode || document.body;
+      const newDiv = d.createElement('div');
+      newDiv.id = 'dplayer';
+      newDiv.style.cssText = 'width:100%; min-height:380px; aspect-ratio:16/9; background:#000; border-radius:4px; overflow:hidden; position:relative;';
+      parent.appendChild(newDiv);
+      DP_DIV = newDiv;
+    }
+
+    // 加上隨機參數強制刷新
+    let finalUrl = u;
+    if (isM3U8) {
+      const separator = u.includes('?') ? '&' : '?';
+      finalUrl = u + separator + '_t=' + Date.now();
+    }
+
+    // 建立全新的 DPlayer
+    dp = new DPlayer({
+      container: DP_DIV,
+      autoplay: true,
+      video: {
+        url: finalUrl,
+        type: isM3U8 ? 'hls' : 'normal',
+        hlsConfig: isM3U8 ? {
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          enableWorker: true,
+          startLevel: -1,
+          // ★★★ 關閉快取 ★★★
+          cacheEncryptionKeys: false,
+          // 重試設定
+          fragLoadMaxRetry: 3,
+          manifestLoadMaxRetry: 3,
+          levelLoadMaxRetry: 3,
+          // ★★★ 關鍵：每次跳轉都重新載入 ★★★
+          fragLoadingTimeOut: 20000,
+          manifestLoadingTimeOut: 20000,
+          levelLoadingTimeOut: 20000,
+        } : null
+      }
+    });
+
+    // ★★★ 跳轉後自動重新整理 buffer ★★★
+    if (isM3U8 && dp.hls) {
+      dp.hls.on(dp.hls.Event.FRAG_LOADING, () => {
+        // 當載入新片段時，清除舊 buffer
+        if (dp.hls) {
+          dp.hls.trigger(dp.hls.Event.BUFFER_RESET);
         }
       });
-
-      // 儲存 HLS 實例引用以便清除快取
-      if (isM3U8 && dp.hls) {
-        hlsInstance = dp.hls;
-        
-        // ★ 關鍵修改：監聽錯誤，自動重試
-        dp.hls.on(dp.hls.Event.ERROR, (event, data) => {
-          if (data.fatal) {
-            console.warn('⚠️ HLS 致命錯誤，嘗試重新載入', data);
-            setTimeout(() => {
-              if (dp && dp.hls) {
-                dp.hls.recoverMediaError();
-              }
-            }, 1000);
-          }
-        });
-
-        // 監聽片段載入失敗
-        dp.hls.on(dp.hls.Event.FRAG_LOAD_ERROR, () => {
-          console.warn('⚠️ 片段載入失敗，將重新請求');
-        });
-      }
-
-      // 設定時間
-      if (t > 0) {
-        setTimeout(() => {
-          if (dp) dp.seek(t);
-        }, 500);
-      }
-      
-      dp.on('ended', () => nextVideo());
-      addDPlayerExtras();
     }
+
+    // 設定初始時間
+    if (t > 0) {
+      setTimeout(() => {
+        if (dp) dp.seek(t);
+      }, 300);
+    }
+    
+    dp.on('ended', () => nextVideo());
+    addDPlayerExtras();
     updateEpDisp(u);
   }
 
@@ -291,10 +276,10 @@
     };
     btnBox.appendChild(curEp);
     btnBox.appendChild(createBtn('⏪', () => { 
-      if (dp) dp.seek(dp.video.currentTime - 10); 
+      if (dp) dp.seek(Math.max(0, dp.video.currentTime - 10)); 
     }));
     btnBox.appendChild(createBtn('⏩', () => { 
-      if (dp) dp.seek(dp.video.currentTime + 10); 
+      if (dp) dp.seek(Math.min(dp.video.duration || 0, dp.video.currentTime + 10)); 
     }));
     btnBox.appendChild(createBtn('↩️', () => { 
       if (dp) dp.seek(85); 
@@ -302,14 +287,6 @@
     btnBox.appendChild(createBtn('⏭️', () => { 
       nextVideo(); 
     }));
-    
-    // 加入清除快取按鈕
-    const clearBtn = document.createElement('div');
-    clearBtn.className = 'dplayer-icon';
-    clearBtn.style.cssText = 'width:auto; padding:0 8px; display:flex; align-items:center; cursor:pointer;';
-    clearBtn.innerHTML = `<div style="font-size:16px; line-height:1; margin-top:5px; color:#ff6b6b;">🧹</div>`;
-    clearBtn.onclick = (e) => { e.stopPropagation(); clearHLSCache(); };
-    btnBox.appendChild(clearBtn);
     
     const ir = d.querySelector('.dplayer-icons-right');
     if (ir) ir.insertBefore(btnBox, ir.firstChild);
@@ -338,12 +315,7 @@
   }
 
   L.oninput = () => { gen(); syncUItoMem(); };
-  
-  // 更頻繁的同步（3秒）
-  setInterval(syncUItoMem, 3000);
-  
-  // 當頁面關閉時同步
-  window.addEventListener('beforeunload', syncUItoMem);
+  setInterval(syncUItoMem, 5000);
 </script>
 </body>
 </html>
